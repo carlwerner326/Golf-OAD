@@ -539,6 +539,15 @@ def sync_results(conn: sqlite3.Connection, season: int = 2026) -> int:
 def format_money(value: int) -> str:
     return f"${value:,.0f}"
 
+def format_short_date(value: str) -> str:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").strftime("%b %-d")
+    except ValueError:
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").strftime("%b %d")
+        except ValueError:
+            return value
+
 def parse_clipboard_results(raw: str):
     rows = []
     errors = []
@@ -711,13 +720,13 @@ def main():
         st.subheader("Current Tournament")
         if current:
             st.write(
-                f"{current['name']} ({current['start_date']} to {current['end_date']})"
+                f"{current['name']} ({format_short_date(current['start_date'])} to {format_short_date(current['end_date'])})"
             )
         else:
             next_up = get_next_tournament(conn)
             if next_up:
                 st.write(
-                    f"Next up: {next_up['name']} ({next_up['start_date']} to {next_up['end_date']})"
+                    f"Next up: {next_up['name']} ({format_short_date(next_up['start_date'])} to {format_short_date(next_up['end_date'])})"
                 )
             else:
                 st.write("No tournament in progress today.")
