@@ -67,7 +67,6 @@ SEED_TOURNAMENTS = [
     ("The Genesis Invitational", "2026-02-19", "2026-02-22", 0, 1, 2026, 20_000_000),
     ("Cognizant Classic", "2026-02-26", "2026-03-01", 0, 0, 2026, 9_600_000),
     ("Arnold Palmer Invitational pres. by Mastercard", "2026-03-05", "2026-03-08", 0, 1, 2026, 20_000_000),
-    ("Puerto Rico Open", "2026-03-05", "2026-03-08", 0, 0, 2026, 4_000_000),
     ("THE PLAYERS Championship", "2026-03-12", "2026-03-15", 0, 0, 2026, 25_000_000),
     ("Valspar Championship", "2026-03-19", "2026-03-22", 0, 0, 2026, 9_100_000),
     ("Texas Children's Houston Open", "2026-03-26", "2026-03-29", 0, 0, 2026, 9_900_000),
