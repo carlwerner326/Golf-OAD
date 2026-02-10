@@ -242,6 +242,9 @@ def seed_if_needed(conn: sqlite3.Connection) -> None:
     if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
         conn.executemany("INSERT INTO users (name) VALUES (?)", [(u,) for u in USERS])
 
+    # Remove tournaments we don't want in the schedule
+    conn.execute("DELETE FROM tournaments WHERE name = ?", ("Puerto Rico Open",))
+
     if conn.execute("SELECT COUNT(*) FROM golfers").fetchone()[0] == 0:
         conn.executemany(
             "INSERT INTO golfers (name, fedex_rank, fedex_points) VALUES (?, ?, ?)",
