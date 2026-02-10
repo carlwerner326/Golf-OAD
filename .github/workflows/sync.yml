@@ -1,0 +1,25 @@
+name: Weekly RapidAPI Sync
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Monday 1:00 AM EST (UTC-5)
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install requests
+      - name: Trigger sync
+        env:
+          STREAMLIT_APP_URL: ${{ secrets.STREAMLIT_APP_URL }}
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+          TOURN_ID: ${{ secrets.TOURN_ID }}
+          YEAR: ${{ secrets.YEAR }}
+        run: python scripts/sync_rapidapi.py
