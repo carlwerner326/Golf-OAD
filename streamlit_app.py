@@ -685,7 +685,7 @@ def main():
     maybe_run_scheduled_sync(conn)
 
     tab_dashboard, tab_picks, tab_tournaments, tab_players, tab_admin = st.tabs(
-        ["Dashboard", "Picks", "Tournaments", "Players", "Admin"]
+        ["Dashboard", "Picks", "Schedule", "Players", "Admin"]
     )
 
     with tab_dashboard:
@@ -883,7 +883,6 @@ def main():
                     st.success("Pick saved.")
 
     with tab_tournaments:
-        st.subheader("Tournament Management")
         tournaments = conn.execute(
             "SELECT name, start_date, end_date, is_major, is_signature, purse FROM tournaments ORDER BY start_date"
         ).fetchall()
