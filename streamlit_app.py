@@ -690,6 +690,58 @@ def main():
     init_db(conn)
     seed_if_needed(conn)
 
+    st.markdown(
+        """
+        <style>
+          .masters-board {
+            border: 2px solid #0c4b2b;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #0c4b2b;
+          }
+          .masters-board table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: "Georgia", "Times New Roman", serif;
+            background: #f7f3e7;
+          }
+          .masters-board th {
+            background: #0c4b2b;
+            color: #f7f3e7;
+            text-align: left;
+            padding: 10px 12px;
+            font-size: 0.9rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+          }
+          .masters-board td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e2dbc7;
+            color: #1f1f1b;
+          }
+          .masters-board tr:nth-child(even) td {
+            background: #fbf8ef;
+          }
+          .masters-board .player {
+            font-weight: 700;
+          }
+          .masters-board .money {
+            font-variant-numeric: tabular-nums;
+          }
+          .masters-board .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: #f0c84b;
+            color: #1f1f1b;
+            font-size: 0.75rem;
+            font-weight: 700;
+          }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.title("Golf One & Done Pool")
     st.caption("Season-long One & Done pool. Week 1 started at WM Phoenix Open.")
 
@@ -702,19 +754,39 @@ def main():
     with tab_dashboard:
         st.subheader("Leaderboard")
         leaderboard = build_leaderboard(conn)
-        st.dataframe(
-            [
-                {
-                    "Player": row["name"],
-                    "Total Purse": format_money(row["total"]),
-                    "Wins": row["wins"],
-                    "Top 5": row["top5"],
-                    "Top 10": row["top10"],
-                }
-                for row in leaderboard
-            ],
-            use_container_width=True,
-        )
+        rows = []
+        for row in leaderboard:
+            rows.append(
+                f"""
+                <tr>
+                  <td class="player">{row['name']}</td>
+                  <td class="money">{format_money(row['total'])}</td>
+                  <td><span class="badge">{row['wins']}</span></td>
+                  <td>{row['top5']}</td>
+                  <td>{row['top10']}</td>
+                </tr>
+                """
+            )
+
+        table_html = f"""
+        <div class="masters-board">
+          <table>
+            <thead>
+              <tr>
+                <th>Player</th>
+                <th>Total</th>
+                <th>Wins</th>
+                <th>Top 5</th>
+                <th>Top 10</th>
+              </tr>
+            </thead>
+            <tbody>
+              {''.join(rows)}
+            </tbody>
+          </table>
+        </div>
+        """
+        st.markdown(table_html, unsafe_allow_html=True)
 
         current = get_today_tournament(conn)
         st.subheader("Current Tournament")
