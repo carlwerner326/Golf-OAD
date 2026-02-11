@@ -77,7 +77,6 @@ SEED_TOURNAMENTS = [
     ("Zurich Classic of New Orleans", "2026-04-23", "2026-04-26", 0, 0, 2026, 9_500_000),
     ("Cadillac Championship", "2026-04-30", "2026-05-03", 0, 1, 2026, None),
     ("Truist Championship", "2026-05-07", "2026-05-10", 0, 1, 2026, 20_000_000),
-    ("ONEflight Myrtle Beach Classic", "2026-05-07", "2026-05-10", 0, 0, 2026, 4_000_000),
     ("PGA Championship", "2026-05-14", "2026-05-17", 1, 0, 2026, None),
     ("THE CJ CUP Byron Nelson", "2026-05-21", "2026-05-24", 0, 0, 2026, 10_300_000),
     ("Charles Schwab Challenge", "2026-05-28", "2026-05-31", 0, 0, 2026, 9_900_000),
@@ -87,9 +86,7 @@ SEED_TOURNAMENTS = [
     ("Travelers Championship", "2026-06-25", "2026-06-28", 0, 1, 2026, 20_000_000),
     ("John Deere Classic", "2026-07-02", "2026-07-05", 0, 0, 2026, 8_800_000),
     ("Genesis Scottish Open", "2026-07-09", "2026-07-12", 0, 0, 2026, 9_000_000),
-    ("ISCO Championship", "2026-07-09", "2026-07-12", 0, 0, 2026, 4_000_000),
     ("The Open", "2026-07-16", "2026-07-19", 1, 0, 2026, None),
-    ("Corales Puntacana Championship", "2026-07-16", "2026-07-19", 0, 0, 2026, 4_000_000),
     ("3M Open", "2026-07-23", "2026-07-26", 0, 0, 2026, 8_800_000),
     ("Rocket Classic", "2026-07-30", "2026-08-02", 0, 0, 2026, 10_000_000),
     ("Wyndham Championship", "2026-08-06", "2026-08-09", 0, 0, 2026, 8_500_000),
@@ -245,6 +242,9 @@ def seed_if_needed(conn: sqlite3.Connection) -> None:
 
     # Remove tournaments we don't want in the schedule
     conn.execute("DELETE FROM tournaments WHERE name = ?", ("Puerto Rico Open",))
+    conn.execute("DELETE FROM tournaments WHERE name = ?", ("ONEflight Myrtle Beach Classic",))
+    conn.execute("DELETE FROM tournaments WHERE name = ?", ("ISCO Championship",))
+    conn.execute("DELETE FROM tournaments WHERE name = ?", ("Corales Puntacana Championship",))
 
     if conn.execute("SELECT COUNT(*) FROM golfers").fetchone()[0] == 0:
         conn.executemany(
