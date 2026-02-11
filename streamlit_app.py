@@ -902,14 +902,7 @@ def main():
                 for row in tournament_order
             ]
             default_label = tournament_options[next_index] if tournament_options else ""
-            if (
-                "picks_tournament_select" not in st.session_state
-                or st.session_state.get("picks_tournament_select") not in tournament_options
-                or (
-                    st.session_state.get("picks_tournament_select") == tournament_options[0]
-                    and next_index != 0
-                )
-            ):
+            if "picks_tournament_select" not in st.session_state:
                 st.session_state["picks_tournament_select"] = default_label
             tournament_label = st.selectbox(
                 "Tournament",
