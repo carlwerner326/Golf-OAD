@@ -892,7 +892,7 @@ def main():
         with col_left:
             st.markdown("#### Picks By Tournament")
             tournament_options = [
-                f"Week {week_map[row['name']]} — {row['name']} ({format_money(row['purse']) if row['purse'] else '—'})"
+                f"Week {week_map[row['name']]} — {row['name']} ({format_short_date(row['start_date'])}–{format_short_date(row['end_date'])})"
                 for row in tournament_order
             ]
             default_label = tournament_options[next_index] if tournament_options else ""
@@ -981,7 +981,7 @@ def main():
             user_id = next(u["id"] for u in users if u["name"] == user_label)
             user_picks = conn.execute(
                 """
-                SELECT tournaments.name as tournament, golfers.name as golfer, tournaments.start_date
+                SELECT tournaments.name as tournament, golfers.name as golfer, tournaments.start_date, tournaments.end_date
                 FROM picks
                 JOIN tournaments ON tournaments.id = picks.tournament_id
                 JOIN golfers ON golfers.id = picks.golfer_id
@@ -994,7 +994,7 @@ def main():
                 [
                     {
                         "Week": week_map.get(row["tournament"], "—"),
-                        "Tournament": row["tournament"],
+                        "Tournament": f"{row['tournament']} ({format_short_date(row['start_date'])}–{format_short_date(row['end_date'])})",
                         "Golfer": row["golfer"],
                     }
                     for row in user_picks
@@ -1007,7 +1007,7 @@ def main():
             st.markdown("#### Add Pick")
             users = conn.execute("SELECT id, name FROM users ORDER BY name").fetchall()
             tournaments = conn.execute(
-                "SELECT id, name, start_date, is_major FROM tournaments ORDER BY start_date"
+                "SELECT id, name, start_date, end_date, is_major FROM tournaments ORDER BY start_date"
             ).fetchall()
             golfers = conn.execute(
                 "SELECT id, name, fedex_rank FROM golfers WHERE active = 1 ORDER BY fedex_rank IS NULL, fedex_rank, name"
@@ -1022,13 +1022,13 @@ def main():
             user_name = st.selectbox("User", [u["name"] for u in users])
             tournament_name = st.selectbox(
                 "Tournament",
-                [f"{t['name']} ({t['start_date']})" for t in tournaments],
+                [f"{t['name']} ({format_short_date(t['start_date'])}–{format_short_date(t['end_date'])})" for t in tournaments],
                 index=next_index,
                 key="admin_pick_tournament",
             )
             golfer_name = st.selectbox("Golfer", [g["name"] for g in golfers])
             selected_tournament = tournaments[
-                [f"{t['name']} ({t['start_date']})" for t in tournaments].index(tournament_name)
+                [f"{t['name']} ({format_short_date(t['start_date'])}–{format_short_date(t['end_date'])})" for t in tournaments].index(tournament_name)
             ]
             is_major = bool(selected_tournament["is_major"])
             st.caption("Major event" if is_major else "Regular event")
@@ -1106,7 +1106,7 @@ def main():
             [
                 {
                     "Tournament": row["name"],
-                    "Dates": f"{row['start_date']} to {row['end_date']}",
+                    "Dates": f"{format_short_date(row['start_date'])} to {format_short_date(row['end_date'])}",
                     "Major": "Yes" if row["is_major"] else "",
                     "Signature": "Yes" if row["is_signature"] else "",
                     "Purse": format_money(row["purse"]) if row["purse"] else "—",
