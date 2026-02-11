@@ -648,6 +648,14 @@ def get_next_tournament(conn: sqlite3.Connection):
     ).fetchone()
 
 
+def get_next_tournament_index(tournaments) -> int:
+    today = date.today().isoformat()
+    for idx, t in enumerate(tournaments):
+        if t["start_date"] >= today:
+            return idx
+    return 0
+
+
 def is_admin() -> bool:
     return True
 
@@ -816,29 +824,34 @@ def main():
         col_left, col_right = st.columns([2, 3])
 
         # pick the next upcoming tournament by default
-        today_str = date.today().isoformat()
-        next_index = 0
-        for idx, t in enumerate(tournament_order):
-            if t["start_date"] >= today_str:
-                next_index = idx
-                break
+        next_index = get_next_tournament_index(tournament_order)
 
         with col_left:
             st.markdown("#### Picks By Tournament")
+            tournament_options = [
+                f"Week {week_map[row['name']]} — {row['name']} ({format_money(row['purse']) if row['purse'] else '—'})"
+                for row in tournament_order
+            ]
+            default_label = tournament_options[next_index] if tournament_options else ""
+            if (
+                "picks_tournament_select" not in st.session_state
+                or st.session_state.get("picks_tournament_select") not in tournament_options
+                or (
+                    st.session_state.get("picks_tournament_select") == tournament_options[0]
+                    and next_index != 0
+                )
+            ):
+                st.session_state["picks_tournament_select"] = default_label
             tournament_label = st.selectbox(
                 "Tournament",
-                [
-                    f"Week {week_map[row['name']]} — {row['name']} ({format_money(row['purse']) if row['purse'] else '—'})"
-                    for row in tournament_order
-                ],
+                tournament_options,
                 key="picks_tournament_select",
-                index=next_index,
             )
             selected_name = tournament_label.split(" — ", 1)[1]
             selected_name = selected_name.rsplit(" (", 1)[0]
             tournament_picks = conn.execute(
                 """
-                SELECT users.name as user, golfers.name as golfer
+                SELECT picks.id as pick_id, users.name as user, golfers.name as golfer
                 FROM picks
                 JOIN users ON users.id = picks.user_id
                 JOIN golfers ON golfers.id = picks.golfer_id
@@ -848,11 +861,15 @@ def main():
                 """,
                 (selected_name,),
             ).fetchall()
-            st.dataframe(
-                [{"Player": row["user"], "Golfer": row["golfer"]} for row in tournament_picks],
-                use_container_width=True,
-                hide_index=True,
-            )
+            for row in tournament_picks:
+                col_a, col_b, col_c = st.columns([3, 3, 1])
+                col_a.write(row["user"])
+                col_b.write(row["golfer"])
+                if col_c.button("Delete", key=f"del_pick_{row['pick_id']}"):
+                    conn.execute("DELETE FROM picks WHERE id = ?", (row["pick_id"],))
+                    conn.commit()
+                    st.success("Pick deleted.")
+                    st.rerun()
 
         with col_right:
             st.markdown("#### Picks By Player")
