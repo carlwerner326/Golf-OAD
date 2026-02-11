@@ -748,16 +748,21 @@ def main():
                 font-weight: 700;
               }
               .menu-button button {
-                width: 28px !important;
-                min-height: 28px !important;
+                width: auto !important;
+                min-height: auto !important;
                 padding: 0 !important;
-                border-radius: 8px !important;
-                border: 1px solid rgba(255,255,255,0.25) !important;
-                background: rgba(255,255,255,0.02) !important;
+                border-radius: 0 !important;
+                border: none !important;
+                background: transparent !important;
+                box-shadow: none !important;
+              }
+              .menu-button button:hover {
+                color: #f0c84b !important;
               }
               .menu-button button p {
-                font-size: 18px !important;
+                font-size: 22px !important;
                 line-height: 1 !important;
+                margin: 0 !important;
               }
               .menu-inline {
                 display: flex;
