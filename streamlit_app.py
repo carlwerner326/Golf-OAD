@@ -747,19 +747,20 @@ def main():
                 font-size: 0.75rem;
                 font-weight: 700;
               }
-              .menu-button button {
+              .menu-button [data-testid="stButton"] button {
                 width: auto !important;
-                min-height: auto !important;
+                min-height: 0 !important;
+                height: auto !important;
                 padding: 0 !important;
                 border-radius: 0 !important;
                 border: none !important;
                 background: transparent !important;
                 box-shadow: none !important;
               }
-              .menu-button button:hover {
+              .menu-button [data-testid="stButton"] button:hover {
                 color: #f0c84b !important;
               }
-              .menu-button button p {
+              .menu-button [data-testid="stButton"] button p {
                 font-size: 22px !important;
                 line-height: 1 !important;
                 margin: 0 !important;
