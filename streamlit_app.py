@@ -747,36 +747,27 @@ def main():
                 font-size: 0.75rem;
                 font-weight: 700;
               }
-              .menu-button [data-testid="stButton"] {
+              button[kind="secondary"] {
                 background: transparent !important;
                 border: none !important;
                 padding: 0 !important;
-                margin: 0 !important;
-                box-shadow: none !important;
-              }
-              .menu-button [data-testid="stButton"] button {
-                width: auto !important;
                 min-height: 0 !important;
                 height: auto !important;
-                padding: 0 !important;
-                border-radius: 0 !important;
-                border: none !important;
-                background: transparent !important;
                 box-shadow: none !important;
-                outline: none !important;
               }
-              .menu-button [data-testid="stButton"] button:hover {
+              button[kind="secondary"] p {
+                font-size: 20px !important;
+                line-height: 1 !important;
+                margin: 0 !important;
+                letter-spacing: 2px;
+              }
+              button[kind="secondary"]:hover {
                 color: #f0c84b !important;
                 background: transparent !important;
               }
-              .menu-button [data-testid="stButton"] button:focus {
+              button[kind="secondary"]:focus {
                 outline: none !important;
                 box-shadow: none !important;
-              }
-              .menu-button [data-testid="stButton"] button p {
-                font-size: 22px !important;
-                line-height: 1 !important;
-                margin: 0 !important;
               }
               .menu-inline {
                 display: flex;
@@ -864,10 +855,15 @@ def main():
 
         with col_left:
             st.markdown("#### Picks By Tournament")
-            tournament_options = [
-                f"Week {week_map[row['name']]} — {row['name']} ({format_short_date(row['start_date'])}–{format_short_date(row['end_date'])})"
-                for row in tournament_order
-            ]
+            tournament_options = []
+            tournament_label_map = {}
+            for row in tournament_order:
+                label = (
+                    f"Week {week_map.get(row['name'], '—')} — {row['name']} "
+                    f"({format_short_date(row['start_date'])}–{format_short_date(row['end_date'])})"
+                )
+                tournament_options.append(label)
+                tournament_label_map[label] = row["name"]
             default_label = tournament_options[next_index] if tournament_options else ""
             if "picks_tournament_select" not in st.session_state:
                 st.session_state["picks_tournament_select"] = default_label
@@ -876,8 +872,10 @@ def main():
                 tournament_options,
                 key="picks_tournament_select",
             )
-            selected_name = tournament_label.split(" — ", 1)[1]
-            selected_name = selected_name.rsplit(" (", 1)[0]
+            selected_name = tournament_label_map.get(
+                tournament_label,
+                tournament_order[next_index]["name"] if tournament_order else "",
+            )
             pending_delete_user = st.session_state.get("delete_user")
             pending_delete_tourn = st.session_state.get("delete_tourn")
             if pending_delete_user and pending_delete_tourn:
@@ -896,7 +894,7 @@ def main():
                         f"Delete picks for {pick_row['user']} → {pick_row['golfers']}?"
                     )
                     col_confirm, col_cancel = st.columns([1, 1])
-                    if col_confirm.button("Yes, delete", key="confirm_delete_pick"):
+                    if col_confirm.button("Yes, delete", key="confirm_delete_pick", type="primary"):
                         conn.execute(
                             "DELETE FROM picks WHERE user_id = (SELECT id FROM users WHERE name = ?) "
                             "AND tournament_id = (SELECT id FROM tournaments WHERE name = ?)",
@@ -906,11 +904,9 @@ def main():
                         st.session_state["delete_user"] = None
                         st.session_state["delete_tourn"] = None
                         st.success("Picks deleted.")
-                        st.rerun()
-                    if col_cancel.button("Cancel", key="cancel_delete_pick"):
+                    if col_cancel.button("Cancel", key="cancel_delete_pick", type="primary"):
                         st.session_state["delete_user"] = None
                         st.session_state["delete_tourn"] = None
-                        st.rerun()
             tournament_picks = conn.execute(
                 """
                 SELECT users.name as user,
@@ -930,13 +926,14 @@ def main():
                 col_a.write(row["user"])
                 col_b.write((row["golfer_list"] or "").replace("\n", "<br/>"), unsafe_allow_html=True)
                 with col_c:
-                    st.markdown('<div class="menu-button">', unsafe_allow_html=True)
-                    menu_clicked = st.button("⋯", key=f"menu_pick_{row['user']}")
-                    st.markdown("</div>", unsafe_allow_html=True)
+                    menu_clicked = st.button(
+                        "...",
+                        key=f"menu_pick_{row['user']}",
+                        type="secondary",
+                    )
                     if menu_clicked:
                         st.session_state["delete_user"] = row["user"]
                         st.session_state["delete_tourn"] = selected_name
-                        st.rerun()
 
         with col_right:
             st.markdown("#### Picks By Player")
@@ -1007,7 +1004,7 @@ def main():
                     key="second_golfer",
                 )
 
-            if st.button("Save Pick"):
+            if st.button("Save Pick", type="primary"):
                 user_id = next(u["id"] for u in users if u["name"] == user_name)
                 tournament_id = selected_tournament["id"]
                 golfer_id = next(g["id"] for g in golfers if g["name"] == golfer_name)
@@ -1094,7 +1091,7 @@ def main():
             gname = st.text_input("Golfer name")
             grank = st.number_input("FedExCup rank", min_value=1, max_value=200, step=1)
             gpoints = st.number_input("FedExCup points", min_value=0, step=1)
-            if st.button("Add Golfer"):
+            if st.button("Add Golfer", type="primary"):
                 if not gname.strip():
                     st.error("Golfer name is required.")
                 else:
@@ -1108,7 +1105,7 @@ def main():
             st.markdown("#### Bulk Import Golfers")
             bulk_golfers = st.text_area("Paste golfers", height=160)
             st.caption("Format: Name only OR Name, Rank, Points (Rank/Points optional)")
-            if st.button("Import Golfers"):
+            if st.button("Import Golfers", type="primary"):
                 count = 0
                 for line in bulk_golfers.splitlines():
                     parts = [p.strip() for p in line.split(",") if p.strip()]
@@ -1128,7 +1125,7 @@ def main():
             st.markdown("#### Replace Roster (Name Only)")
             roster_text = st.text_area("Paste full roster (one golfer per line)", height=200, key="roster_replace")
             st.caption("This will set all current golfers to inactive, then activate the pasted names.")
-            if st.button("Replace Roster"):
+            if st.button("Replace Roster", type="primary"):
                 names = [line.strip() for line in roster_text.splitlines() if line.strip()]
                 if not names:
                     st.error("Paste at least one golfer.")
@@ -1161,7 +1158,7 @@ def main():
                 g_name = st.selectbox("Golfer", [g["name"] for g in golfers], key="admin_res_g")
                 purse = st.number_input("Purse (USD)", min_value=0, step=1000, key="admin_res_purse")
                 position = st.number_input("Finish position", min_value=1, step=1, key="admin_res_pos")
-                if st.button("Save Result", key="admin_res_save"):
+                if st.button("Save Result", key="admin_res_save", type="primary"):
                     t_id = next(t["id"] for t in tournaments if t["name"] == t_name)
                     g_id = next(g["id"] for g in golfers if g["name"] == g_name)
                     conn.execute(
@@ -1181,7 +1178,7 @@ def main():
                     key="admin_clip_tournament",
                 )
                 clipboard_text = st.text_area("Paste results text", height=180, key="admin_clip_text")
-                if st.button("Preview Clipboard Parse", key="admin_clip_preview"):
+                if st.button("Preview Clipboard Parse", key="admin_clip_preview", type="primary"):
                     rows, errors = parse_clipboard_results(clipboard_text)
                     st.session_state["admin_clip_rows"] = rows
                     st.session_state["admin_clip_errors"] = errors
@@ -1200,7 +1197,7 @@ def main():
                 if errors:
                     st.warning(f"Skipped {len(errors)} lines (could not parse).")
 
-                if st.button("Import Clipboard Results", key="admin_clip_import"):
+                if st.button("Import Clipboard Results", key="admin_clip_import", type="primary"):
                     if not rows:
                         st.error("No parsed rows. Click Preview Clipboard Parse first.")
                     else:
@@ -1241,7 +1238,7 @@ def main():
                     for name in missing:
                         st.write(f"- {name}")
             sync_year = st.number_input("Schedule year", min_value=2000, max_value=2100, value=2026, step=1)
-            if st.button("Sync tournIds from schedule"):
+            if st.button("Sync tournIds from schedule", type="primary"):
                 try:
                     updated, skipped = sync_tourn_ids_from_rapidapi(conn, int(sync_year))
                     st.success(f"Updated {updated} tournament IDs. Skipped {skipped}.")
@@ -1250,7 +1247,7 @@ def main():
 
             with st.expander("Find tournId by name"):
                 search_text = st.text_input("Search schedule (e.g., Phoenix, Pebble, Genesis)")
-                if st.button("Search schedule"):
+                if st.button("Search schedule", type="primary"):
                     try:
                         schedule = rapidapi_get("/schedule", {"orgId": 1, "year": int(sync_year)})
                         items = schedule.get("schedule") or schedule.get("tournaments") or schedule.get("data") or []
@@ -1289,7 +1286,7 @@ def main():
                         [row["name"] for row in tourn_rows],
                         key="assign_tournament",
                     )
-                    if st.button("Save tournId from match"):
+                    if st.button("Save tournId from match", type="primary"):
                         target = next(row for row in tourn_rows if row["name"] == assign_tournament)
                         conn.execute(
                             "UPDATE tournaments SET rapid_tourn_id = ? WHERE id = ?",
@@ -1310,7 +1307,7 @@ def main():
 
             col_sync_a, col_sync_b = st.columns([1, 2])
             with col_sync_a:
-                if st.button("Save tournId"):
+                if st.button("Save tournId", type="primary"):
                     conn.execute(
                         "UPDATE tournaments SET rapid_tourn_id = ? WHERE id = ?",
                         (tourn_id.strip() or None, selected["id"]),
@@ -1319,7 +1316,7 @@ def main():
                     st.success("tournId saved.")
 
             with col_sync_b:
-                if st.button("Sync Now"):
+                if st.button("Sync Now", type="primary"):
                     if not tourn_id.strip():
                         st.error("tournId is required.")
                     else:
