@@ -729,6 +729,10 @@ def main():
               [class^="st-emotion-cache-"] > div {
                 background: transparent !important;
               }
+              .st-emotion-cache-13k62yr,
+              .st-emotion-cache-13k62yr > div {
+                background: transparent !important;
+              }
               [data-testid="stHeader"], [data-testid="stToolbar"] {
                 background: transparent !important;
               }
