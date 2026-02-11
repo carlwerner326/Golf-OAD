@@ -747,15 +747,22 @@ def main():
                 font-size: 0.75rem;
                 font-weight: 700;
               }
-              .small-trash button {
-                width: 34px !important;
-                min-height: 34px !important;
+              .menu-button button {
+                width: 28px !important;
+                min-height: 28px !important;
                 padding: 0 !important;
                 border-radius: 8px !important;
+                border: 1px solid rgba(255,255,255,0.25) !important;
+                background: rgba(255,255,255,0.02) !important;
               }
-              .small-trash button p {
-                font-size: 16px !important;
+              .menu-button button p {
+                font-size: 18px !important;
                 line-height: 1 !important;
+              }
+              .menu-inline {
+                display: flex;
+                gap: 8px;
+                align-items: center;
               }
             </style>
             """
@@ -876,14 +883,24 @@ def main():
                 col_a.write(row["user"])
                 col_b.write(row["golfer"])
                 with col_c:
-                    st.markdown('<div class="small-trash">', unsafe_allow_html=True)
-                    delete_clicked = st.button("🗑", key=f"del_pick_{row['pick_id']}")
+                    st.markdown('<div class="menu-button">', unsafe_allow_html=True)
+                    menu_clicked = st.button("⋯", key=f"menu_pick_{row['pick_id']}")
                     st.markdown("</div>", unsafe_allow_html=True)
-                if delete_clicked:
-                    conn.execute("DELETE FROM picks WHERE id = ?", (row["pick_id"],))
-                    conn.commit()
-                    st.success("Pick deleted.")
-                    st.rerun()
+
+                if menu_clicked:
+                    st.session_state["active_pick_menu"] = row["pick_id"]
+
+                if st.session_state.get("active_pick_menu") == row["pick_id"]:
+                    confirm_col, delete_col, cancel_col = st.columns([2, 2, 2])
+                    confirm_col.caption("Delete this pick?")
+                    if delete_col.button("Delete", key=f"confirm_del_{row['pick_id']}"):
+                        conn.execute("DELETE FROM picks WHERE id = ?", (row["pick_id"],))
+                        conn.commit()
+                        st.session_state["active_pick_menu"] = None
+                        st.success("Pick deleted.")
+                        st.rerun()
+                    if cancel_col.button("Cancel", key=f"cancel_del_{row['pick_id']}"):
+                        st.session_state["active_pick_menu"] = None
 
         with col_right:
             st.markdown("#### Picks By Player")
