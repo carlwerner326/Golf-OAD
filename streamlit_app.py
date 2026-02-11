@@ -880,7 +880,7 @@ def main():
     with tab_picks:
         st.subheader("Weekly Picks")
         tournament_order = conn.execute(
-            "SELECT id, name, start_date, purse FROM tournaments ORDER BY start_date"
+            "SELECT id, name, start_date, end_date, purse FROM tournaments ORDER BY start_date"
         ).fetchall()
         week_map = {row["name"]: idx + 1 for idx, row in enumerate(tournament_order)}
 
