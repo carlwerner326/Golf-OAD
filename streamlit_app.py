@@ -912,37 +912,47 @@ def main():
             )
             selected_name = tournament_label.split(" — ", 1)[1]
             selected_name = selected_name.rsplit(" (", 1)[0]
-            pending_delete = st.query_params.get("delete_pick_id")
-            if pending_delete:
+            pending_delete_user = st.query_params.get("delete_user")
+            pending_delete_tourn = st.query_params.get("delete_tourn")
+            if pending_delete_user and pending_delete_tourn:
                 pick_row = conn.execute(
-                    "SELECT picks.id, users.name as user, golfers.name as golfer FROM picks\n"
+                    "SELECT users.name as user, GROUP_CONCAT(golfers.name, ', ') as golfers\n"
+                    "FROM picks\n"
                     "JOIN users ON users.id = picks.user_id\n"
                     "JOIN golfers ON golfers.id = picks.golfer_id\n"
-                    "WHERE picks.id = ?",
-                    (pending_delete,),
+                    "JOIN tournaments ON tournaments.id = picks.tournament_id\n"
+                    "WHERE users.name = ? AND tournaments.name = ?\n"
+                    "GROUP BY users.name",
+                    (pending_delete_user, pending_delete_tourn),
                 ).fetchone()
                 if pick_row:
                     st.warning(
-                        f"Delete pick: {pick_row['user']} → {pick_row['golfer']}?"
+                        f"Delete picks for {pick_row['user']} → {pick_row['golfers']}?"
                     )
                     col_confirm, col_cancel = st.columns([1, 1])
                     if col_confirm.button("Yes, delete", key="confirm_delete_pick"):
-                        conn.execute("DELETE FROM picks WHERE id = ?", (pending_delete,))
+                        conn.execute(
+                            "DELETE FROM picks WHERE user_id = (SELECT id FROM users WHERE name = ?) "
+                            "AND tournament_id = (SELECT id FROM tournaments WHERE name = ?)",
+                            (pending_delete_user, pending_delete_tourn),
+                        )
                         conn.commit()
                         st.query_params.clear()
-                        st.success("Pick deleted.")
+                        st.success("Picks deleted.")
                         st.rerun()
                     if col_cancel.button("Cancel", key="cancel_delete_pick"):
                         st.query_params.clear()
                         st.rerun()
             tournament_picks = conn.execute(
                 """
-                SELECT picks.id as pick_id, users.name as user, golfers.name as golfer
+                SELECT users.name as user,
+                       GROUP_CONCAT(golfers.name, '\n') as golfer_list
                 FROM picks
                 JOIN users ON users.id = picks.user_id
                 JOIN golfers ON golfers.id = picks.golfer_id
                 JOIN tournaments ON tournaments.id = picks.tournament_id
                 WHERE tournaments.name = ?
+                GROUP BY users.name
                 ORDER BY users.name
                 """,
                 (selected_name,),
@@ -950,14 +960,14 @@ def main():
             for row in tournament_picks:
                 col_a, col_b, col_c = st.columns([3, 3, 1])
                 col_a.write(row["user"])
-                col_b.write(row["golfer"])
+                col_b.write((row["golfer_list"] or "").replace("\n", "<br/>"), unsafe_allow_html=True)
                 with col_c:
                     st.markdown(
                         f"""
                         <div class="ellipsis-menu">
                           ⋯
                           <div class="menu">
-                            <a href="?delete_pick_id={row['pick_id']}">Delete</a>
+                            <a href="?delete_user={row['user']}&delete_tourn={selected_name}">Delete</a>
                           </div>
                         </div>
                         """,
