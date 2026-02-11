@@ -713,8 +713,9 @@ def main():
                 background: radial-gradient(1200px 600px at 10% 0%, var(--midnight-slate) 0%, var(--midnight-base) 60%) !important;
                 background-attachment: fixed !important;
               }
-              .stApp {
-                background: transparent !important;
+              .stApp,
+              .st-emotion-cache-13k62yr {
+                background: radial-gradient(1200px 600px at 10% 0%, var(--midnight-slate) 0%, var(--midnight-base) 60%) !important;
               }
               [data-testid="stAppViewContainer"],
               [data-testid="stAppViewContainer"] > .main,
@@ -729,7 +730,6 @@ def main():
               [class^="st-emotion-cache-"] > div {
                 background: transparent !important;
               }
-              .st-emotion-cache-13k62yr,
               .st-emotion-cache-13k62yr > div {
                 background: transparent !important;
               }
