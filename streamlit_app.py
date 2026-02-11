@@ -815,6 +815,14 @@ def main():
 
         col_left, col_right = st.columns([2, 3])
 
+        # pick the next upcoming tournament by default
+        today_str = date.today().isoformat()
+        next_index = 0
+        for idx, t in enumerate(tournament_order):
+            if t["start_date"] >= today_str:
+                next_index = idx
+                break
+
         with col_left:
             st.markdown("#### Picks By Tournament")
             tournament_label = st.selectbox(
@@ -824,6 +832,7 @@ def main():
                     for row in tournament_order
                 ],
                 key="picks_tournament_select",
+                index=next_index,
             )
             selected_name = tournament_label.split(" — ", 1)[1]
             selected_name = selected_name.rsplit(" (", 1)[0]
@@ -967,6 +976,7 @@ def main():
                             )
                     conn.commit()
                     st.success("Pick saved.")
+                    st.rerun()
 
     with tab_tournaments:
         tournaments = conn.execute(
