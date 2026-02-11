@@ -773,6 +773,38 @@ def main():
                 line-height: 1 !important;
                 margin: 0 !important;
               }
+              .ellipsis-menu {
+                position: relative;
+                display: inline-block;
+                font-size: 22px;
+                color: #d0d0d0;
+                cursor: pointer;
+              }
+              .ellipsis-menu:hover {
+                color: #f0c84b;
+              }
+              .ellipsis-menu .menu {
+                display: none;
+                position: absolute;
+                right: 0;
+                top: 18px;
+                background: #1a1d24;
+                border: 1px solid rgba(255,255,255,0.15);
+                border-radius: 8px;
+                padding: 6px 8px;
+                z-index: 10;
+              }
+              .ellipsis-menu:hover .menu {
+                display: block;
+              }
+              .ellipsis-menu .menu a {
+                color: #f2f2f2;
+                text-decoration: none;
+                font-size: 13px;
+              }
+              .ellipsis-menu .menu a:hover {
+                color: #ffbcbc;
+              }
               .menu-inline {
                 display: flex;
                 gap: 8px;
@@ -880,6 +912,29 @@ def main():
             )
             selected_name = tournament_label.split(" — ", 1)[1]
             selected_name = selected_name.rsplit(" (", 1)[0]
+            pending_delete = st.query_params.get("delete_pick_id")
+            if pending_delete:
+                pick_row = conn.execute(
+                    "SELECT picks.id, users.name as user, golfers.name as golfer FROM picks\n"
+                    "JOIN users ON users.id = picks.user_id\n"
+                    "JOIN golfers ON golfers.id = picks.golfer_id\n"
+                    "WHERE picks.id = ?",
+                    (pending_delete,),
+                ).fetchone()
+                if pick_row:
+                    st.warning(
+                        f"Delete pick: {pick_row['user']} → {pick_row['golfer']}?"
+                    )
+                    col_confirm, col_cancel = st.columns([1, 1])
+                    if col_confirm.button("Yes, delete", key="confirm_delete_pick"):
+                        conn.execute("DELETE FROM picks WHERE id = ?", (pending_delete,))
+                        conn.commit()
+                        st.query_params.clear()
+                        st.success("Pick deleted.")
+                        st.rerun()
+                    if col_cancel.button("Cancel", key="cancel_delete_pick"):
+                        st.query_params.clear()
+                        st.rerun()
             tournament_picks = conn.execute(
                 """
                 SELECT picks.id as pick_id, users.name as user, golfers.name as golfer
@@ -897,24 +952,17 @@ def main():
                 col_a.write(row["user"])
                 col_b.write(row["golfer"])
                 with col_c:
-                    st.markdown('<div class="menu-button">', unsafe_allow_html=True)
-                    menu_clicked = st.button("⋯", key=f"menu_pick_{row['pick_id']}")
-                    st.markdown("</div>", unsafe_allow_html=True)
-
-                if menu_clicked:
-                    st.session_state["active_pick_menu"] = row["pick_id"]
-
-                if st.session_state.get("active_pick_menu") == row["pick_id"]:
-                    confirm_col, delete_col, cancel_col = st.columns([2, 2, 2])
-                    confirm_col.caption("Delete this pick?")
-                    if delete_col.button("Delete", key=f"confirm_del_{row['pick_id']}"):
-                        conn.execute("DELETE FROM picks WHERE id = ?", (row["pick_id"],))
-                        conn.commit()
-                        st.session_state["active_pick_menu"] = None
-                        st.success("Pick deleted.")
-                        st.rerun()
-                    if cancel_col.button("Cancel", key=f"cancel_del_{row['pick_id']}"):
-                        st.session_state["active_pick_menu"] = None
+                    st.markdown(
+                        f"""
+                        <div class="ellipsis-menu">
+                          ⋯
+                          <div class="menu">
+                            <a href="?delete_pick_id={row['pick_id']}">Delete</a>
+                          </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
 
         with col_right:
             st.markdown("#### Picks By Player")
