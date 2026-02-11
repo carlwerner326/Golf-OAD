@@ -702,6 +702,7 @@ def main():
     st.markdown(
         textwrap.dedent(
             """
+            <div class="app-bg"></div>
             <style>
               :root {
                 --midnight-base: #0d0f14;
@@ -709,13 +710,19 @@ def main():
                 --midnight-olive: #2a322c;
                 --midnight-gold: #c9a646;
               }
-              html, body, .stApp,
-              [data-testid="stAppViewContainer"],
-              [data-testid="stAppViewContainer"] > .main,
-              [data-testid="stAppViewContainer"] > .main > div,
-              section.main,
-              section.main > div {
-                background: radial-gradient(1200px 600px at 10% 0%, var(--midnight-slate) 0%, var(--midnight-base) 60%) !important;
+              html, body, .stApp {
+                background: transparent !important;
+              }
+              .app-bg {
+                position: fixed;
+                inset: 0;
+                z-index: 0;
+                background: radial-gradient(1200px 600px at 10% 0%, var(--midnight-slate) 0%, var(--midnight-base) 60%);
+              }
+              [data-testid="stAppViewContainer"] {
+                background: transparent !important;
+                position: relative;
+                z-index: 1;
               }
               [data-testid="stHeader"], [data-testid="stToolbar"] {
                 background: transparent !important;
