@@ -747,6 +747,13 @@ def main():
                 font-size: 0.75rem;
                 font-weight: 700;
               }
+              .menu-button [data-testid="stButton"] {
+                background: transparent !important;
+                border: none !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                box-shadow: none !important;
+              }
               .menu-button [data-testid="stButton"] button {
                 width: auto !important;
                 min-height: 0 !important;
@@ -756,6 +763,7 @@ def main():
                 border: none !important;
                 background: transparent !important;
                 box-shadow: none !important;
+                outline: none !important;
               }
               .menu-button [data-testid="stButton"] button:hover {
                 color: #f0c84b !important;
