@@ -719,6 +719,8 @@ def main():
               [data-testid="stAppViewContainer"],
               [data-testid="stAppViewContainer"] > .main,
               [data-testid="stAppViewContainer"] > .main > div,
+              [data-testid="stAppViewContainer"] [data-testid="stAppViewBlockContainer"],
+              [data-testid="stAppViewContainer"] [data-testid="stAppViewBlockContainer"] > div,
               section.main,
               section.main > div {
                 background: transparent !important;
