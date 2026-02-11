@@ -2,7 +2,6 @@ import os
 import re
 import sqlite3
 import textwrap
-from urllib.parse import quote_plus
 from datetime import date, datetime
 from typing import Optional
 
@@ -768,48 +767,16 @@ def main():
               }
               .menu-button [data-testid="stButton"] button:hover {
                 color: #f0c84b !important;
+                background: transparent !important;
+              }
+              .menu-button [data-testid="stButton"] button:focus {
+                outline: none !important;
+                box-shadow: none !important;
               }
               .menu-button [data-testid="stButton"] button p {
                 font-size: 22px !important;
                 line-height: 1 !important;
                 margin: 0 !important;
-              }
-              details.ellipsis-menu {
-                position: relative;
-                display: inline-block;
-              }
-              details.ellipsis-menu summary {
-                list-style: none;
-                cursor: pointer;
-                color: #d0d0d0;
-                font-size: 22px;
-              }
-              details.ellipsis-menu summary::-webkit-details-marker {
-                display: none;
-              }
-              details.ellipsis-menu summary:hover {
-                color: #f0c84b;
-              }
-              details.ellipsis-menu .menu {
-                position: absolute;
-                right: 0;
-                top: 18px;
-                background: #1a1d24;
-                border: 1px solid rgba(255,255,255,0.15);
-                border-radius: 8px;
-                padding: 6px 8px;
-                z-index: 10;
-              }
-              details.ellipsis-menu:not([open]) .menu {
-                display: none;
-              }
-              details.ellipsis-menu .menu a {
-                color: #f2f2f2;
-                text-decoration: none;
-                font-size: 13px;
-              }
-              details.ellipsis-menu .menu a:hover {
-                color: #ffbcbc;
               }
               .menu-inline {
                 display: flex;
@@ -911,8 +878,8 @@ def main():
             )
             selected_name = tournament_label.split(" — ", 1)[1]
             selected_name = selected_name.rsplit(" (", 1)[0]
-            pending_delete_user = st.query_params.get("delete_user")
-            pending_delete_tourn = st.query_params.get("delete_tourn")
+            pending_delete_user = st.session_state.get("delete_user")
+            pending_delete_tourn = st.session_state.get("delete_tourn")
             if pending_delete_user and pending_delete_tourn:
                 pick_row = conn.execute(
                     "SELECT users.name as user, GROUP_CONCAT(golfers.name, ', ') as golfers\n"
@@ -936,11 +903,13 @@ def main():
                             (pending_delete_user, pending_delete_tourn),
                         )
                         conn.commit()
-                        st.query_params.clear()
+                        st.session_state["delete_user"] = None
+                        st.session_state["delete_tourn"] = None
                         st.success("Picks deleted.")
                         st.rerun()
                     if col_cancel.button("Cancel", key="cancel_delete_pick"):
-                        st.query_params.clear()
+                        st.session_state["delete_user"] = None
+                        st.session_state["delete_tourn"] = None
                         st.rerun()
             tournament_picks = conn.execute(
                 """
@@ -961,19 +930,13 @@ def main():
                 col_a.write(row["user"])
                 col_b.write((row["golfer_list"] or "").replace("\n", "<br/>"), unsafe_allow_html=True)
                 with col_c:
-                    delete_user = quote_plus(row["user"])
-                    delete_tourn = quote_plus(selected_name)
-                    st.markdown(
-                        f"""
-                        <details class="ellipsis-menu">
-                          <summary>⋯</summary>
-                          <div class="menu">
-                            <a href="?delete_user={delete_user}&delete_tourn={delete_tourn}" target="_self">Delete</a>
-                          </div>
-                        </details>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                    st.markdown('<div class="menu-button">', unsafe_allow_html=True)
+                    menu_clicked = st.button("⋯", key=f"menu_pick_{row['user']}")
+                    st.markdown("</div>", unsafe_allow_html=True)
+                    if menu_clicked:
+                        st.session_state["delete_user"] = row["user"]
+                        st.session_state["delete_tourn"] = selected_name
+                        st.rerun()
 
         with col_right:
             st.markdown("#### Picks By Player")
