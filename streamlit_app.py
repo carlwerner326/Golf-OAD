@@ -709,14 +709,14 @@ def main():
                 --midnight-olive: #2a322c;
                 --midnight-gold: #c9a646;
               }
+              html, body, .stApp {
+                background: radial-gradient(1200px 600px at 10% 0%, var(--midnight-slate) 0%, var(--midnight-base) 60%) !important;
+              }
               [data-testid="stAppViewContainer"] {
-                background: radial-gradient(1200px 600px at 10% 0%, var(--midnight-slate) 0%, var(--midnight-base) 60%);
+                background: transparent !important;
               }
-              [data-testid="stHeader"] {
-                background: transparent;
-              }
-              [data-testid="stToolbar"] {
-                background: transparent;
+              [data-testid="stHeader"], [data-testid="stToolbar"] {
+                background: transparent !important;
               }
               .masters-board {
                 border: 2px solid #0c4b2b;
