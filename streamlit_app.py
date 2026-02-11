@@ -709,11 +709,13 @@ def main():
                 --midnight-olive: #2a322c;
                 --midnight-gold: #c9a646;
               }
-              html, body, .stApp {
+              html, body, .stApp,
+              [data-testid="stAppViewContainer"],
+              [data-testid="stAppViewContainer"] > .main,
+              [data-testid="stAppViewContainer"] > .main > div,
+              section.main,
+              section.main > div {
                 background: radial-gradient(1200px 600px at 10% 0%, var(--midnight-slate) 0%, var(--midnight-base) 60%) !important;
-              }
-              [data-testid="stAppViewContainer"] {
-                background: transparent !important;
               }
               [data-testid="stHeader"], [data-testid="stToolbar"] {
                 background: transparent !important;
