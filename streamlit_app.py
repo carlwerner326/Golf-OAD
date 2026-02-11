@@ -725,6 +725,10 @@ def main():
               section.main > div {
                 background: transparent !important;
               }
+              [class^="st-emotion-cache-"],
+              [class^="st-emotion-cache-"] > div {
+                background: transparent !important;
+              }
               [data-testid="stHeader"], [data-testid="stToolbar"] {
                 background: transparent !important;
               }
