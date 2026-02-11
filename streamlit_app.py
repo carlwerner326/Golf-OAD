@@ -703,6 +703,21 @@ def main():
         textwrap.dedent(
             """
             <style>
+              :root {
+                --midnight-base: #0d0f14;
+                --midnight-slate: #1c222b;
+                --midnight-olive: #2a322c;
+                --midnight-gold: #c9a646;
+              }
+              [data-testid="stAppViewContainer"] {
+                background: radial-gradient(1200px 600px at 10% 0%, var(--midnight-slate) 0%, var(--midnight-base) 60%);
+              }
+              [data-testid="stHeader"] {
+                background: transparent;
+              }
+              [data-testid="stToolbar"] {
+                background: transparent;
+              }
               .masters-board {
                 border: 2px solid #0c4b2b;
                 border-radius: 12px;
