@@ -747,6 +747,16 @@ def main():
                 font-size: 0.75rem;
                 font-weight: 700;
               }
+              .small-trash button {
+                width: 34px !important;
+                min-height: 34px !important;
+                padding: 0 !important;
+                border-radius: 8px !important;
+              }
+              .small-trash button p {
+                font-size: 16px !important;
+                line-height: 1 !important;
+              }
             </style>
             """
         ),
@@ -865,7 +875,11 @@ def main():
                 col_a, col_b, col_c = st.columns([3, 3, 1])
                 col_a.write(row["user"])
                 col_b.write(row["golfer"])
-                if col_c.button("Delete", key=f"del_pick_{row['pick_id']}"):
+                with col_c:
+                    st.markdown('<div class="small-trash">', unsafe_allow_html=True)
+                    delete_clicked = st.button("🗑", key=f"del_pick_{row['pick_id']}")
+                    st.markdown("</div>", unsafe_allow_html=True)
+                if delete_clicked:
                     conn.execute("DELETE FROM picks WHERE id = ?", (row["pick_id"],))
                     conn.commit()
                     st.success("Pick deleted.")
