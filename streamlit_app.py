@@ -2,6 +2,7 @@ import os
 import re
 import sqlite3
 import textwrap
+from urllib.parse import quote_plus
 from datetime import date, datetime
 from typing import Optional
 
@@ -773,18 +774,23 @@ def main():
                 line-height: 1 !important;
                 margin: 0 !important;
               }
-              .ellipsis-menu {
+              details.ellipsis-menu {
                 position: relative;
                 display: inline-block;
-                font-size: 22px;
-                color: #d0d0d0;
-                cursor: pointer;
               }
-              .ellipsis-menu:hover {
+              details.ellipsis-menu summary {
+                list-style: none;
+                cursor: pointer;
+                color: #d0d0d0;
+                font-size: 22px;
+              }
+              details.ellipsis-menu summary::-webkit-details-marker {
+                display: none;
+              }
+              details.ellipsis-menu summary:hover {
                 color: #f0c84b;
               }
-              .ellipsis-menu .menu {
-                display: none;
+              details.ellipsis-menu .menu {
                 position: absolute;
                 right: 0;
                 top: 18px;
@@ -794,15 +800,15 @@ def main():
                 padding: 6px 8px;
                 z-index: 10;
               }
-              .ellipsis-menu:hover .menu {
-                display: block;
+              details.ellipsis-menu:not([open]) .menu {
+                display: none;
               }
-              .ellipsis-menu .menu a {
+              details.ellipsis-menu .menu a {
                 color: #f2f2f2;
                 text-decoration: none;
                 font-size: 13px;
               }
-              .ellipsis-menu .menu a:hover {
+              details.ellipsis-menu .menu a:hover {
                 color: #ffbcbc;
               }
               .menu-inline {
@@ -962,14 +968,16 @@ def main():
                 col_a.write(row["user"])
                 col_b.write((row["golfer_list"] or "").replace("\n", "<br/>"), unsafe_allow_html=True)
                 with col_c:
+                    delete_user = quote_plus(row["user"])
+                    delete_tourn = quote_plus(selected_name)
                     st.markdown(
                         f"""
-                        <div class="ellipsis-menu">
-                          ⋯
+                        <details class="ellipsis-menu">
+                          <summary>⋯</summary>
                           <div class="menu">
-                            <a href="?delete_user={row['user']}&delete_tourn={selected_name}">Delete</a>
+                            <a href="?delete_user={delete_user}&delete_tourn={delete_tourn}" target="_self">Delete</a>
                           </div>
-                        </div>
+                        </details>
                         """,
                         unsafe_allow_html=True,
                     )
