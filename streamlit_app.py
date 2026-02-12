@@ -1,4 +1,5 @@
 import os
+import json
 import re
 import sqlite3
 import textwrap
@@ -106,6 +107,9 @@ INITIAL_PICKS = [
 
 def get_db_path() -> str:
     return os.getenv("GOLF_DB_PATH", os.path.join("data", "golf.db"))
+
+def get_picks_backup_path() -> str:
+    return os.getenv("GOLF_PICKS_BACKUP", os.path.join("data", "picks_backup.json"))
 
 def load_env_file(path: str = ".env") -> None:
     if not os.path.exists(path):
@@ -302,6 +306,62 @@ def normalize_name(value: str) -> str:
         .replace("  ", " ")
         .strip()
     )
+
+
+def save_picks_snapshot(conn: sqlite3.Connection) -> None:
+    picks = conn.execute(
+        """
+        SELECT users.name as user,
+               tournaments.name as tournament,
+               golfers.name as golfer,
+               picks.created_at as created_at
+        FROM picks
+        JOIN users ON users.id = picks.user_id
+        JOIN tournaments ON tournaments.id = picks.tournament_id
+        JOIN golfers ON golfers.id = picks.golfer_id
+        ORDER BY picks.created_at
+        """
+    ).fetchall()
+    payload = [
+        {
+            "user": row["user"],
+            "tournament": row["tournament"],
+            "golfer": row["golfer"],
+            "created_at": row["created_at"],
+        }
+        for row in picks
+    ]
+    path = get_picks_backup_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2)
+
+
+def restore_picks_snapshot(conn: sqlite3.Connection) -> bool:
+    path = get_picks_backup_path()
+    if not os.path.exists(path):
+        return False
+    with open(path, "r", encoding="utf-8") as handle:
+        try:
+            payload = json.load(handle)
+        except json.JSONDecodeError:
+            return False
+    if not payload:
+        return False
+    restored = 0
+    for row in payload:
+        user = conn.execute("SELECT id FROM users WHERE name = ?", (row["user"],)).fetchone()
+        tournament = conn.execute("SELECT id FROM tournaments WHERE name = ?", (row["tournament"],)).fetchone()
+        golfer = conn.execute("SELECT id FROM golfers WHERE name = ?", (row["golfer"],)).fetchone()
+        if not user or not tournament or not golfer:
+            continue
+        conn.execute(
+            "INSERT OR IGNORE INTO picks (user_id, tournament_id, golfer_id, created_at) VALUES (?, ?, ?, ?)",
+            (user["id"], tournament["id"], golfer["id"], row.get("created_at") or datetime.utcnow().isoformat()),
+        )
+        restored += 1
+    conn.commit()
+    return restored > 0
 
 
 def bdl_get(path: str, params: Optional[dict] = None) -> dict:
@@ -698,6 +758,8 @@ def main():
     conn = get_conn()
     init_db(conn)
     seed_if_needed(conn)
+    if conn.execute("SELECT COUNT(*) FROM picks").fetchone()[0] == 0:
+        restore_picks_snapshot(conn)
 
     st.markdown(
         textwrap.dedent(
@@ -934,6 +996,7 @@ def main():
                             (pending_delete_user, pending_delete_tourn),
                         )
                         conn.commit()
+                        save_picks_snapshot(conn)
                         st.session_state["delete_user"] = None
                         st.session_state["delete_tourn"] = None
                         st.success("Picks deleted.")
@@ -1089,6 +1152,7 @@ def main():
                                 (user_id,),
                             )
                     conn.commit()
+                    save_picks_snapshot(conn)
                     st.success("Pick saved.")
                     st.rerun()
 
