@@ -1066,8 +1066,13 @@ def main():
 
         col_left, col_right = st.columns([2, 3])
 
-        # pick the next upcoming tournament by default
+        # pick current tournament if in progress, otherwise next upcoming
+        today_str = date.today().isoformat()
         next_index = get_next_tournament_index(tournament_order)
+        for idx, t in enumerate(tournament_order):
+            if t["start_date"] <= today_str <= t["end_date"]:
+                next_index = idx
+                break
 
         with col_left:
             st.markdown("#### Picks By Tournament")
