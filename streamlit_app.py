@@ -7,6 +7,15 @@ from datetime import date, datetime
 from typing import Optional
 
 import requests
+
+try:
+    import gspread
+    from google.oauth2 import service_account
+    SHEETS_AVAILABLE = True
+except ImportError:
+    gspread = None
+    service_account = None
+    SHEETS_AVAILABLE = False
 import streamlit as st
 
 BDL_BASE = "https://api.balldontlie.io/pga/v1"
@@ -110,6 +119,47 @@ def get_db_path() -> str:
 
 def get_picks_backup_path() -> str:
     return os.getenv("GOLF_PICKS_BACKUP", os.path.join("data", "picks_backup.json"))
+
+def get_sheets_id() -> str:
+    return os.getenv("GOOGLE_SHEETS_ID", "").strip()
+
+def get_sheets_scopes() -> list:
+    return ["https://www.googleapis.com/auth/spreadsheets"]
+
+def get_sheets_client():
+    if not SHEETS_AVAILABLE:
+        return None
+    sheet_id = get_sheets_id()
+    if not sheet_id:
+        return None
+    info_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+    info_file = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "").strip()
+    info = None
+    if info_json:
+        try:
+            info = json.loads(info_json)
+        except json.JSONDecodeError:
+            return None
+    elif info_file and os.path.exists(info_file):
+        with open(info_file, "r", encoding="utf-8") as handle:
+            info = json.load(handle)
+    if not info:
+        return None
+    creds = service_account.Credentials.from_service_account_info(info, scopes=get_sheets_scopes())
+    return gspread.authorize(creds)
+
+def get_picks_worksheet():
+    client = get_sheets_client()
+    sheet_id = get_sheets_id()
+    if not client or not sheet_id:
+        return None
+    sheet = client.open_by_key(sheet_id)
+    try:
+        worksheet = sheet.worksheet("picks")
+    except gspread.WorksheetNotFound:
+        worksheet = sheet.add_worksheet(title="picks", rows=200, cols=4)
+        worksheet.update("A1:D1", [["user", "tournament", "golfer", "created_at"]])
+    return worksheet
 
 def load_env_file(path: str = ".env") -> None:
     if not os.path.exists(path):
@@ -335,6 +385,65 @@ def save_picks_snapshot(conn: sqlite3.Connection) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
+
+def sync_picks_from_sheet(conn: sqlite3.Connection) -> bool:
+    worksheet = get_picks_worksheet()
+    if not worksheet:
+        return False
+    rows = worksheet.get_all_records()
+    if not rows:
+        return False
+    conn.execute("DELETE FROM picks")
+    restored = 0
+    for row in rows:
+        user = conn.execute("SELECT id FROM users WHERE name = ?", (row.get("user"),)).fetchone()
+        tournament = conn.execute("SELECT id FROM tournaments WHERE name = ?", (row.get("tournament"),)).fetchone()
+        golfer = conn.execute("SELECT id FROM golfers WHERE name = ?", (row.get("golfer"),)).fetchone()
+        if not user or not tournament or not golfer:
+            continue
+        conn.execute(
+            "INSERT OR IGNORE INTO picks (user_id, tournament_id, golfer_id, created_at) VALUES (?, ?, ?, ?)",
+            (user["id"], tournament["id"], golfer["id"], row.get("created_at") or datetime.utcnow().isoformat()),
+        )
+        restored += 1
+    conn.commit()
+    return restored > 0
+
+def sync_picks_to_sheet(conn: sqlite3.Connection) -> None:
+    worksheet = get_picks_worksheet()
+    if not worksheet:
+        return
+    picks = conn.execute(
+        """
+        SELECT users.name as user,
+               tournaments.name as tournament,
+               golfers.name as golfer,
+               picks.created_at as created_at
+        FROM picks
+        JOIN users ON users.id = picks.user_id
+        JOIN tournaments ON tournaments.id = picks.tournament_id
+        JOIN golfers ON golfers.id = picks.golfer_id
+        ORDER BY picks.created_at
+        """
+    ).fetchall()
+    values = [["user", "tournament", "golfer", "created_at"]]
+    for row in picks:
+        values.append([row["user"], row["tournament"], row["golfer"], row["created_at"]])
+    worksheet.clear()
+    worksheet.update("A1", values)
+
+def persist_picks(conn: sqlite3.Connection) -> None:
+    if get_picks_worksheet():
+        sync_picks_to_sheet(conn)
+    else:
+        save_picks_snapshot(conn)
+
+def hydrate_picks(conn: sqlite3.Connection) -> None:
+    if get_picks_worksheet():
+        if sync_picks_from_sheet(conn):
+            return
+    if conn.execute("SELECT COUNT(*) FROM picks").fetchone()[0] == 0:
+        restore_picks_snapshot(conn)
 
 
 def restore_picks_snapshot(conn: sqlite3.Connection) -> bool:
@@ -758,8 +867,7 @@ def main():
     conn = get_conn()
     init_db(conn)
     seed_if_needed(conn)
-    if conn.execute("SELECT COUNT(*) FROM picks").fetchone()[0] == 0:
-        restore_picks_snapshot(conn)
+    hydrate_picks(conn)
 
     st.markdown(
         textwrap.dedent(
@@ -996,7 +1104,7 @@ def main():
                             (pending_delete_user, pending_delete_tourn),
                         )
                         conn.commit()
-                        save_picks_snapshot(conn)
+                        persist_picks(conn)
                         st.session_state["delete_user"] = None
                         st.session_state["delete_tourn"] = None
                         st.success("Picks deleted.")
@@ -1152,7 +1260,7 @@ def main():
                                 (user_id,),
                             )
                     conn.commit()
-                    save_picks_snapshot(conn)
+                    persist_picks(conn)
                     st.success("Pick saved.")
                     st.rerun()
 
@@ -1244,6 +1352,15 @@ def main():
         if not is_admin():
             st.warning("Admin access required.")
         else:
+            st.markdown("#### Storage Status")
+            if get_sheets_id():
+                if get_picks_worksheet():
+                    st.success("Google Sheets storage: connected.")
+                else:
+                    st.warning("Google Sheets storage: configured but not connected.")
+            else:
+                st.info("Google Sheets storage: not configured. Using local backup.")
+
             st.markdown("#### Results Entry")
             tournaments = conn.execute("SELECT id, name FROM tournaments ORDER BY start_date").fetchall()
             golfers = conn.execute("SELECT id, name FROM golfers WHERE active = 1 ORDER BY name").fetchall()
