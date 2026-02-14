@@ -1356,6 +1356,8 @@ def main():
             if get_sheets_id():
                 if get_picks_worksheet():
                     st.success("Google Sheets storage: connected.")
+                    sheet_url = f"https://docs.google.com/spreadsheets/d/{get_sheets_id()}/edit"
+                    st.markdown(f"[Open Picks Sheet]({sheet_url})")
                 else:
                     st.warning("Google Sheets storage: configured but not connected.")
             else:
