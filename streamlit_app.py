@@ -11,10 +11,12 @@ import requests
 try:
     import gspread
     from google.oauth2 import service_account
+    from gspread.exceptions import APIError
     SHEETS_AVAILABLE = True
 except ImportError:
     gspread = None
     service_account = None
+    APIError = Exception
     SHEETS_AVAILABLE = False
 import streamlit as st
 
@@ -153,13 +155,16 @@ def get_picks_worksheet():
     sheet_id = get_sheets_id()
     if not client or not sheet_id:
         return None
-    sheet = client.open_by_key(sheet_id)
     try:
-        worksheet = sheet.worksheet("picks")
-    except gspread.WorksheetNotFound:
-        worksheet = sheet.add_worksheet(title="picks", rows=200, cols=4)
-        worksheet.update("A1:D1", [["user", "tournament", "golfer", "created_at"]])
-    return worksheet
+        sheet = client.open_by_key(sheet_id)
+        try:
+            worksheet = sheet.worksheet("picks")
+        except gspread.WorksheetNotFound:
+            worksheet = sheet.add_worksheet(title="picks", rows=200, cols=4)
+            worksheet.update("A1:D1", [["user", "tournament", "golfer", "created_at"]])
+        return worksheet
+    except APIError:
+        return None
 
 def load_env_file(path: str = ".env") -> None:
     if not os.path.exists(path):
@@ -390,7 +395,10 @@ def sync_picks_from_sheet(conn: sqlite3.Connection) -> bool:
     worksheet = get_picks_worksheet()
     if not worksheet:
         return False
-    rows = worksheet.get_all_records()
+    try:
+        rows = worksheet.get_all_records()
+    except APIError:
+        return False
     if not rows:
         return False
     conn.execute("DELETE FROM picks")
@@ -429,17 +437,22 @@ def sync_picks_to_sheet(conn: sqlite3.Connection) -> None:
     values = [["user", "tournament", "golfer", "created_at"]]
     for row in picks:
         values.append([row["user"], row["tournament"], row["golfer"], row["created_at"]])
-    worksheet.clear()
-    worksheet.update("A1", values)
+    try:
+        worksheet.clear()
+        worksheet.update("A1", values)
+    except APIError:
+        return
 
 def persist_picks(conn: sqlite3.Connection) -> None:
-    if get_picks_worksheet():
+    worksheet = get_picks_worksheet()
+    if worksheet:
         sync_picks_to_sheet(conn)
     else:
         save_picks_snapshot(conn)
 
 def hydrate_picks(conn: sqlite3.Connection) -> None:
-    if get_picks_worksheet():
+    worksheet = get_picks_worksheet()
+    if worksheet:
         if sync_picks_from_sheet(conn):
             return
     if conn.execute("SELECT COUNT(*) FROM picks").fetchone()[0] == 0:
