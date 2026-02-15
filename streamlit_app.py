@@ -1399,6 +1399,23 @@ def main():
             else:
                 st.info("Google Sheets storage: not configured. Using local backup.")
 
+            st.markdown("#### RapidAPI Key Check")
+            key_value = os.getenv("RAPIDAPI_KEY", "").strip()
+            host_value = os.getenv("RAPIDAPI_HOST", "live-golf-data.p.rapidapi.com").strip()
+            if key_value:
+                st.write(
+                    f"Key loaded: yes (length {len(key_value)}, last 4: {key_value[-4:]})"
+                )
+                st.write(f"Host: {host_value}")
+            else:
+                st.warning("Key loaded: no. Check Streamlit secrets for RAPIDAPI_KEY.")
+            if st.button("Test RapidAPI Connection", type="primary"):
+                try:
+                    _ = rapidapi_get("/schedule", {"orgId": 1, "year": date.today().year})
+                    st.success("RapidAPI connection OK.")
+                except Exception as exc:
+                    st.error(f"RapidAPI test failed: {exc}")
+
             st.markdown("#### Results Entry")
             tournaments = conn.execute("SELECT id, name FROM tournaments ORDER BY start_date").fetchall()
             golfers = conn.execute("SELECT id, name FROM golfers WHERE active = 1 ORDER BY name").fetchall()
