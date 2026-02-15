@@ -536,14 +536,18 @@ def normalize_person_name(value: str) -> str:
 def sync_results_from_rapidapi(
     conn: sqlite3.Connection, tourn_id: str, year: int, tournament_id: int
 ) -> tuple[int, int]:
+    safe_tourn_id = str(int(tourn_id)) if str(tourn_id).isdigit() else str(tourn_id).lstrip("0")
     leaderboard = rapidapi_get(
         "/leaderboard",
-        {"orgId": 1, "tournId": tourn_id, "year": year},
+        {"orgId": 1, "tournId": safe_tourn_id, "year": year},
     )
-    earnings = rapidapi_get(
-        "/earnings",
-        {"tournId": tourn_id, "year": year},
-    )
+    try:
+        earnings = rapidapi_get(
+            "/earnings",
+            {"tournId": safe_tourn_id, "year": year},
+        )
+    except requests.HTTPError:
+        earnings = {"leaderboard": []}
 
     leaderboard_rows = leaderboard.get("leaderboard", [])
     earnings_rows = earnings.get("leaderboard", [])
@@ -591,6 +595,20 @@ def sync_results_from_rapidapi(
             (tournament_id, golfer_id, earnings_value, position),
         )
         updated += 1
+
+    # If earnings are missing, still store positions with zero purse so top5/top10 update.
+    if not earnings_map and positions:
+        for norm_name, position in positions.items():
+            golfer_id = golfer_lookup.get(norm_name)
+            if not golfer_id:
+                skipped += 1
+                continue
+            upsert(
+                "INSERT INTO results (tournament_id, golfer_id, purse, position) VALUES (?, ?, ?, ?)\n"
+                "ON CONFLICT(tournament_id, golfer_id) DO UPDATE SET position = excluded.position",
+                (tournament_id, golfer_id, 0, position),
+            )
+            updated += 1
 
     conn.commit()
     return updated, skipped
@@ -1521,13 +1539,15 @@ def main():
                         key="assign_tournament",
                     )
                     if st.button("Save tournId from match", type="primary"):
+                        raw_id = str(match["tournId"]).strip()
+                        clean_id = str(int(raw_id)) if raw_id.isdigit() else raw_id.lstrip("0")
                         target = next(row for row in tourn_rows if row["name"] == assign_tournament)
                         conn.execute(
                             "UPDATE tournaments SET rapid_tourn_id = ? WHERE id = ?",
-                            (str(match["tournId"]), target["id"]),
+                            (clean_id or None, target["id"]),
                         )
                         conn.commit()
-                        st.success(f"Saved tournId {match['tournId']} for {assign_tournament}.")
+                        st.success(f"Saved tournId {clean_id} for {assign_tournament}.")
 
             tourn_label = st.selectbox(
                 "Tournament to sync",
@@ -1542,9 +1562,11 @@ def main():
             col_sync_a, col_sync_b = st.columns([1, 2])
             with col_sync_a:
                 if st.button("Save tournId", type="primary"):
+                    raw_id = tourn_id.strip()
+                    clean_id = str(int(raw_id)) if raw_id.isdigit() else raw_id.lstrip("0")
                     conn.execute(
                         "UPDATE tournaments SET rapid_tourn_id = ? WHERE id = ?",
-                        (tourn_id.strip() or None, selected["id"]),
+                        (clean_id or None, selected["id"]),
                     )
                     conn.commit()
                     st.success("tournId saved.")
