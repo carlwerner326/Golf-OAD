@@ -2,6 +2,7 @@ name: Weekly RapidAPI Sync
 
 on:
   schedule:
+    - cron: "0 3 * * 1" # Sunday 10:00 PM EST (UTC-5)
     - cron: "0 6 * * 1" # Monday 1:00 AM EST (UTC-5)
   workflow_dispatch:
 
