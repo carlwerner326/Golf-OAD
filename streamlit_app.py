@@ -538,8 +538,8 @@ def sync_results_from_rapidapi(
 ) -> tuple[int, int]:
     safe_tourn_id = str(int(tourn_id)) if str(tourn_id).isdigit() else str(tourn_id).lstrip("0")
     leaderboard = rapidapi_get(
-        "/leaderboard",
-        {"orgId": 1, "tournId": safe_tourn_id, "year": year},
+        "/leaderboards",
+        {"tournId": safe_tourn_id, "year": year},
     )
     try:
         earnings = rapidapi_get(
@@ -621,7 +621,7 @@ def extract_date(value: Optional[str]) -> Optional[str]:
 
 
 def sync_tourn_ids_from_rapidapi(conn: sqlite3.Connection, year: int) -> tuple[int, int]:
-    schedule = rapidapi_get("/schedule", {"orgId": 1, "year": year})
+    schedule = rapidapi_get("/schedules", {"year": year})
     items = schedule.get("schedule") or schedule.get("tournaments") or schedule.get("data") or []
 
     db_tournaments = conn.execute(
@@ -1411,7 +1411,7 @@ def main():
                 st.warning("Key loaded: no. Check Streamlit secrets for RAPIDAPI_KEY.")
             if st.button("Test RapidAPI Connection", type="primary"):
                 try:
-                    _ = rapidapi_get("/schedule", {"orgId": 1, "year": date.today().year})
+                    _ = rapidapi_get("/schedules", {"year": date.today().year})
                     st.success("RapidAPI connection OK.")
                 except Exception as exc:
                     st.error(f"RapidAPI test failed: {exc}")
@@ -1518,7 +1518,7 @@ def main():
                 search_text = st.text_input("Search schedule (e.g., Phoenix, Pebble, Genesis)")
                 if st.button("Search schedule", type="primary"):
                     try:
-                        schedule = rapidapi_get("/schedule", {"orgId": 1, "year": int(sync_year)})
+                        schedule = rapidapi_get("/schedules", {"year": int(sync_year)})
                         items = schedule.get("schedule") or schedule.get("tournaments") or schedule.get("data") or []
                         matches = []
                         for item in items:
