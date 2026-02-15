@@ -526,6 +526,51 @@ def rapidapi_get(path: str, params: Optional[dict] = None) -> dict:
     return resp.json()
 
 
+def rapidapi_get_with_fallback(
+    paths: list[str], params_list: list[dict]
+) -> dict:
+    last_error = None
+    for path, params in zip(paths, params_list):
+        try:
+            return rapidapi_get(path, params)
+        except requests.HTTPError as exc:
+            last_error = exc
+            status = getattr(exc.response, "status_code", None)
+            if status not in (400, 404):
+                break
+            continue
+    if last_error:
+        raise last_error
+    raise RuntimeError("RapidAPI request failed.")
+
+
+def rapidapi_fetch_schedule(year: int) -> dict:
+    return rapidapi_get_with_fallback(
+        ["/schedules", "/schedule"],
+        [{"year": year}, {"orgId": 1, "year": year}],
+    )
+
+
+def rapidapi_fetch_leaderboard(tourn_id: str, year: int) -> dict:
+    return rapidapi_get_with_fallback(
+        ["/leaderboards", "/leaderboard"],
+        [
+            {"tournId": tourn_id, "year": year},
+            {"orgId": 1, "tournId": tourn_id, "year": year},
+        ],
+    )
+
+
+def rapidapi_fetch_earnings(tourn_id: str, year: int) -> dict:
+    return rapidapi_get_with_fallback(
+        ["/earnings", "/earning"],
+        [
+            {"tournId": tourn_id, "year": year},
+            {"orgId": 1, "tournId": tourn_id, "year": year},
+        ],
+    )
+
+
 def normalize_person_name(value: str) -> str:
     value = value.lower()
     value = re.sub(r"[^a-z0-9 ]+", " ", value)
@@ -537,15 +582,9 @@ def sync_results_from_rapidapi(
     conn: sqlite3.Connection, tourn_id: str, year: int, tournament_id: int
 ) -> tuple[int, int]:
     safe_tourn_id = str(int(tourn_id)) if str(tourn_id).isdigit() else str(tourn_id).lstrip("0")
-    leaderboard = rapidapi_get(
-        "/leaderboards",
-        {"tournId": safe_tourn_id, "year": year},
-    )
+    leaderboard = rapidapi_fetch_leaderboard(safe_tourn_id, year)
     try:
-        earnings = rapidapi_get(
-            "/earnings",
-            {"tournId": safe_tourn_id, "year": year},
-        )
+        earnings = rapidapi_fetch_earnings(safe_tourn_id, year)
     except requests.HTTPError:
         earnings = {"leaderboard": []}
 
@@ -621,7 +660,7 @@ def extract_date(value: Optional[str]) -> Optional[str]:
 
 
 def sync_tourn_ids_from_rapidapi(conn: sqlite3.Connection, year: int) -> tuple[int, int]:
-    schedule = rapidapi_get("/schedules", {"year": year})
+    schedule = rapidapi_fetch_schedule(year)
     items = schedule.get("schedule") or schedule.get("tournaments") or schedule.get("data") or []
 
     db_tournaments = conn.execute(
@@ -1411,7 +1450,7 @@ def main():
                 st.warning("Key loaded: no. Check Streamlit secrets for RAPIDAPI_KEY.")
             if st.button("Test RapidAPI Connection", type="primary"):
                 try:
-                    _ = rapidapi_get("/schedules", {"year": date.today().year})
+                    _ = rapidapi_fetch_schedule(date.today().year)
                     st.success("RapidAPI connection OK.")
                 except Exception as exc:
                     st.error(f"RapidAPI test failed: {exc}")
@@ -1518,7 +1557,7 @@ def main():
                 search_text = st.text_input("Search schedule (e.g., Phoenix, Pebble, Genesis)")
                 if st.button("Search schedule", type="primary"):
                     try:
-                        schedule = rapidapi_get("/schedules", {"year": int(sync_year)})
+                        schedule = rapidapi_fetch_schedule(int(sync_year))
                         items = schedule.get("schedule") or schedule.get("tournaments") or schedule.get("data") or []
                         matches = []
                         for item in items:
