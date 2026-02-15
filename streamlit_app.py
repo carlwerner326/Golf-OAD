@@ -552,21 +552,27 @@ def rapidapi_fetch_schedule(year: int) -> dict:
 
 
 def rapidapi_fetch_leaderboard(tourn_id: str, year: int) -> dict:
+    prev_year = year - 1
     return rapidapi_get_with_fallback(
         ["/leaderboards", "/leaderboard"],
         [
             {"tournId": tourn_id, "year": year},
+            {"tournId": tourn_id, "year": prev_year},
             {"orgId": 1, "tournId": tourn_id, "year": year},
+            {"orgId": 1, "tournId": tourn_id, "year": prev_year},
         ],
     )
 
 
 def rapidapi_fetch_earnings(tourn_id: str, year: int) -> dict:
+    prev_year = year - 1
     return rapidapi_get_with_fallback(
         ["/earnings", "/earning"],
         [
             {"tournId": tourn_id, "year": year},
+            {"tournId": tourn_id, "year": prev_year},
             {"orgId": 1, "tournId": tourn_id, "year": year},
+            {"orgId": 1, "tournId": tourn_id, "year": prev_year},
         ],
     )
 
