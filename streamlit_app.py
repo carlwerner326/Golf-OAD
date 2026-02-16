@@ -7,6 +7,7 @@ from datetime import date, datetime
 from typing import Optional
 
 import requests
+from difflib import SequenceMatcher
 
 try:
     import gspread
@@ -582,6 +583,80 @@ def normalize_person_name(value: str) -> str:
     value = re.sub(r"[^a-z0-9 ]+", " ", value)
     value = re.sub(r"\s+", " ", value).strip()
     return value
+
+
+def normalize_tournament_name(value: str) -> str:
+    value = value.lower()
+    value = re.sub(r"[^a-z0-9 ]+", " ", value)
+    value = re.sub(r"\s+", " ", value).strip()
+    for token in [
+        "presented by",
+        "pres by",
+        "pres.",
+        "sponsored by",
+        "the ",
+        "tournament",
+        "championship",
+        "invitational",
+        "open",
+        "classic",
+        "pro am",
+        "pro-am",
+        "by",
+    ]:
+        value = value.replace(token, " ")
+    value = re.sub(r"\s+", " ", value).strip()
+    return value
+
+
+def resolve_tourn_id_for_event(
+    conn: sqlite3.Connection, tournament_id: int, year: int
+) -> tuple[Optional[str], Optional[int]]:
+    row = conn.execute(
+        "SELECT name, start_date FROM tournaments WHERE id = ?",
+        (tournament_id,),
+    ).fetchone()
+    if not row:
+        return None, None
+    target_name = normalize_tournament_name(row["name"])
+    target_start = row["start_date"]
+
+    for test_year in (year, year - 1):
+        try:
+            schedule = rapidapi_fetch_schedule(test_year)
+        except Exception:
+            continue
+        items = schedule.get("schedule") or schedule.get("tournaments") or schedule.get("data") or []
+        best = None
+        best_score = 0.0
+        for item in items:
+            name = (
+                item.get("tournament")
+                or item.get("name")
+                or item.get("tournName")
+                or item.get("eventName")
+                or ""
+            )
+            if not name:
+                continue
+            norm = normalize_tournament_name(name)
+            score = SequenceMatcher(None, target_name, norm).ratio()
+            start = extract_date(
+                item.get("startDate")
+                or item.get("start_date")
+                or item.get("start")
+                or item.get("startDateUtc")
+            )
+            if start and target_start and start == target_start:
+                score += 0.25
+            if score > best_score:
+                best_score = score
+                best = item
+        if best and best_score >= 0.6:
+            tourn_id = best.get("tournId") or best.get("tournamentId") or best.get("id")
+            if tourn_id is not None:
+                return str(tourn_id), test_year
+    return None, None
 
 
 def sync_results_from_rapidapi(
@@ -1635,16 +1710,35 @@ def main():
 
             with col_sync_b:
                 if st.button("Sync Now", type="primary"):
-                    if not tourn_id.strip():
-                        st.error("tournId is required.")
-                    else:
-                        try:
+                    raw_id = tourn_id.strip()
+                    clean_id = str(int(raw_id)) if raw_id.isdigit() else raw_id.lstrip("0")
+                    attempted_id = clean_id or None
+                    attempted_year = int(year)
+                    try:
+                        if not attempted_id:
+                            attempted_id, attempted_year = resolve_tourn_id_for_event(
+                                conn, selected["id"], int(year)
+                            )
+                            if attempted_id:
+                                conn.execute(
+                                    "UPDATE tournaments SET rapid_tourn_id = ? WHERE id = ?",
+                                    (attempted_id, selected["id"]),
+                                )
+                                conn.commit()
+                        if not attempted_id:
+                            st.error("Unable to resolve tournId from schedule.")
+                        else:
                             updated, skipped = sync_results_from_rapidapi(
-                                conn, tourn_id.strip(), int(year), selected["id"]
+                                conn, attempted_id, int(attempted_year or year), selected["id"]
                             )
                             st.success(f"Synced {updated} results. Skipped {skipped} names not in roster.")
-                        except Exception as exc:
-                            st.error(f"RapidAPI sync failed: {exc}")
+                    except requests.HTTPError as exc:
+                        detail = ""
+                        if exc.response is not None:
+                            detail = exc.response.text
+                        st.error(f"RapidAPI sync failed: {exc} {detail}".strip())
+                    except Exception as exc:
+                        st.error(f"RapidAPI sync failed: {exc}")
 
             st.caption("RapidAPI requires your key in `.env` for local use, or Streamlit secrets when deployed.")
 
