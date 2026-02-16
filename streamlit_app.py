@@ -656,7 +656,7 @@ def resolve_tourn_id_for_event(
 def sync_results_from_rapidapi(
     conn: sqlite3.Connection, tourn_id: str, year: int, tournament_id: int
 ) -> tuple[int, int]:
-    safe_tourn_id = str(int(tourn_id)) if str(tourn_id).isdigit() else str(tourn_id).lstrip("0")
+    safe_tourn_id = str(tourn_id).strip()
     leaderboard = rapidapi_fetch_leaderboard(safe_tourn_id, year)
     try:
         earnings = rapidapi_fetch_earnings(safe_tourn_id, year)
@@ -1711,8 +1711,7 @@ def main():
                         key="assign_tournament",
                     )
                     if st.button("Save tournId from match", type="primary"):
-                        raw_id = str(match["tournId"]).strip()
-                        clean_id = str(int(raw_id)) if raw_id.isdigit() else raw_id.lstrip("0")
+                        clean_id = str(match["tournId"]).strip()
                         target = next(row for row in tourn_rows if row["name"] == assign_tournament)
                         conn.execute(
                             "UPDATE tournaments SET rapid_tourn_id = ? WHERE id = ?",
@@ -1735,8 +1734,7 @@ def main():
             col_sync_a, col_sync_b = st.columns([1, 2])
             with col_sync_a:
                 if st.button("Save tournId", type="primary"):
-                    raw_id = tourn_id.strip()
-                    clean_id = str(int(raw_id)) if raw_id.isdigit() else raw_id.lstrip("0")
+                    clean_id = tourn_id.strip()
                     conn.execute(
                         "UPDATE tournaments SET rapid_tourn_id = ? WHERE id = ?",
                         (clean_id or None, selected["id"]),
@@ -1746,9 +1744,7 @@ def main():
 
             with col_sync_b:
                 if st.button("Sync Now", type="primary"):
-                    raw_id = tourn_id.strip()
-                    clean_id = str(int(raw_id)) if raw_id.isdigit() else raw_id.lstrip("0")
-                    attempted_id = clean_id or None
+                    attempted_id = tourn_id.strip() or None
                     attempted_year = int(year)
                     try:
                         updated, skipped = sync_results_with_autoresolve(
