@@ -976,6 +976,14 @@ def get_next_tournament_index(tournaments) -> int:
     return 0
 
 
+def get_current_or_next_tournament_index(tournaments) -> int:
+    today = date.today().isoformat()
+    for idx, t in enumerate(tournaments):
+        if t["start_date"] <= today <= t["end_date"]:
+            return idx
+    return get_next_tournament_index(tournaments)
+
+
 def is_admin() -> bool:
     return True
 
@@ -1205,12 +1213,7 @@ def main():
         col_left, col_right = st.columns([2, 3])
 
         # pick current tournament if in progress, otherwise next upcoming
-        today_str = date.today().isoformat()
-        next_index = get_next_tournament_index(tournament_order)
-        for idx, t in enumerate(tournament_order):
-            if t["start_date"] <= today_str <= t["end_date"]:
-                next_index = idx
-                break
+        next_index = get_current_or_next_tournament_index(tournament_order)
 
         with col_left:
             st.markdown("#### Picks By Tournament")
@@ -1537,13 +1540,19 @@ def main():
                     st.error(f"RapidAPI test failed: {exc}")
 
             st.markdown("#### Results Entry")
-            tournaments = conn.execute("SELECT id, name FROM tournaments ORDER BY start_date").fetchall()
+            tournaments = conn.execute("SELECT id, name, start_date, end_date FROM tournaments ORDER BY start_date").fetchall()
             golfers = conn.execute("SELECT id, name FROM golfers WHERE active = 1 ORDER BY name").fetchall()
+            admin_default_idx = get_current_or_next_tournament_index(tournaments)
 
             col_a, col_b = st.columns([2, 3])
             with col_a:
                 st.markdown("**Single Result**")
-                t_name = st.selectbox("Tournament", [t["name"] for t in tournaments], key="admin_res_t")
+                t_name = st.selectbox(
+                    "Tournament",
+                    [t["name"] for t in tournaments],
+                    index=admin_default_idx,
+                    key="admin_res_t",
+                )
                 g_name = st.selectbox("Golfer", [g["name"] for g in golfers], key="admin_res_g")
                 purse = st.number_input("Purse (USD)", min_value=0, step=1000, key="admin_res_purse")
                 position = st.number_input("Finish position", min_value=1, step=1, key="admin_res_pos")
@@ -1564,6 +1573,7 @@ def main():
                 tournament_for_clip = st.selectbox(
                     "Tournament (for clipboard import)",
                     [t["name"] for t in tournaments],
+                    index=admin_default_idx,
                     key="admin_clip_tournament",
                 )
                 clipboard_text = st.text_area("Paste results text", height=180, key="admin_clip_text")
@@ -1619,8 +1629,9 @@ def main():
             st.markdown("#### RapidAPI Sync (Live Golf Data)")
             st.caption("Uses RapidAPI live-golf-data: /leaderboard (positions) + /earnings (purse).")
             tourn_rows = conn.execute(
-                "SELECT id, name, rapid_tourn_id FROM tournaments ORDER BY start_date"
+                "SELECT id, name, rapid_tourn_id, start_date, end_date FROM tournaments ORDER BY start_date"
             ).fetchall()
+            sync_default_idx = get_current_or_next_tournament_index(tourn_rows)
             missing = [row["name"] for row in tourn_rows if not row["rapid_tourn_id"]]
             if missing:
                 with st.expander(f"Missing tournIds ({len(missing)})"):
@@ -1689,6 +1700,7 @@ def main():
             tourn_label = st.selectbox(
                 "Tournament to sync",
                 [f"{row['name']} (tournId: {row['rapid_tourn_id'] or 'unset'})" for row in tourn_rows],
+                index=sync_default_idx,
                 key="rapid_tourn_select",
             )
             selected_name = tourn_label.split(" (tournId:", 1)[0]
