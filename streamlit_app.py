@@ -548,32 +548,26 @@ def rapidapi_get_with_fallback(
 def rapidapi_fetch_schedule(year: int) -> dict:
     return rapidapi_get_with_fallback(
         ["/schedules", "/schedule"],
-        [{"year": year}, {"orgId": 1, "year": year}],
+        [{"orgId": 1, "year": year}, {"orgId": 1, "year": year}],
     )
 
 
 def rapidapi_fetch_leaderboard(tourn_id: str, year: int) -> dict:
-    prev_year = year - 1
     return rapidapi_get_with_fallback(
         ["/leaderboards", "/leaderboard"],
         [
-            {"tournId": tourn_id, "year": year},
-            {"tournId": tourn_id, "year": prev_year},
             {"orgId": 1, "tournId": tourn_id, "year": year},
-            {"orgId": 1, "tournId": tourn_id, "year": prev_year},
+            {"orgId": 1, "tournId": tourn_id, "year": year},
         ],
     )
 
 
 def rapidapi_fetch_earnings(tourn_id: str, year: int) -> dict:
-    prev_year = year - 1
     return rapidapi_get_with_fallback(
         ["/earnings", "/earning"],
         [
-            {"tournId": tourn_id, "year": year},
-            {"tournId": tourn_id, "year": prev_year},
             {"orgId": 1, "tournId": tourn_id, "year": year},
-            {"orgId": 1, "tournId": tourn_id, "year": prev_year},
+            {"orgId": 1, "tournId": tourn_id, "year": year},
         ],
     )
 
@@ -732,6 +726,36 @@ def sync_results_from_rapidapi(
 
     conn.commit()
     return updated, skipped
+
+
+def sync_results_with_autoresolve(
+    conn: sqlite3.Connection, tourn_id: str, year: int, tournament_id: int
+) -> tuple[int, int]:
+    attempts = []
+    if tourn_id:
+        attempts.append((tourn_id, year))
+        attempts.append((tourn_id, year - 1))
+    resolved_id, resolved_year = resolve_tourn_id_for_event(conn, tournament_id, year)
+    if resolved_id:
+        attempts.append((resolved_id, resolved_year or year))
+        attempts.append((resolved_id, (resolved_year or year) - 1))
+
+    last_error = None
+    for attempt_id, attempt_year in attempts:
+        if not attempt_id:
+            continue
+        try:
+            updated, skipped = sync_results_from_rapidapi(
+                conn, str(attempt_id), int(attempt_year), tournament_id
+            )
+            if updated > 0:
+                return updated, skipped
+        except requests.HTTPError as exc:
+            last_error = exc
+            continue
+    if last_error:
+        raise last_error
+    return 0, 0
 
 
 def extract_date(value: Optional[str]) -> Optional[str]:
@@ -1727,23 +1751,13 @@ def main():
                     attempted_id = clean_id or None
                     attempted_year = int(year)
                     try:
-                        if not attempted_id:
-                            attempted_id, attempted_year = resolve_tourn_id_for_event(
-                                conn, selected["id"], int(year)
-                            )
-                            if attempted_id:
-                                conn.execute(
-                                    "UPDATE tournaments SET rapid_tourn_id = ? WHERE id = ?",
-                                    (attempted_id, selected["id"]),
-                                )
-                                conn.commit()
-                        if not attempted_id:
-                            st.error("Unable to resolve tournId from schedule.")
-                        else:
-                            updated, skipped = sync_results_from_rapidapi(
-                                conn, attempted_id, int(attempted_year or year), selected["id"]
-                            )
-                            st.success(f"Synced {updated} results. Skipped {skipped} names not in roster.")
+                        updated, skipped = sync_results_with_autoresolve(
+                            conn,
+                            attempted_id,
+                            int(attempted_year or year),
+                            selected["id"],
+                        )
+                        st.success(f"Synced {updated} results. Skipped {skipped} names not in roster.")
                     except requests.HTTPError as exc:
                         detail = ""
                         if exc.response is not None:
