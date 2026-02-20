@@ -1563,15 +1563,13 @@ def main():
         if is_admin():
             st.markdown("#### Add Golfer")
             gname = st.text_input("Golfer name")
-            grank = st.number_input("FedExCup rank", min_value=1, max_value=200, step=1)
-            gpoints = st.number_input("FedExCup points", min_value=0, step=1)
             if st.button("Add Golfer", type="primary"):
                 if not gname.strip():
                     st.error("Golfer name is required.")
                 else:
                     conn.execute(
-                        "INSERT OR IGNORE INTO golfers (name, fedex_rank, fedex_points) VALUES (?, ?, ?)",
-                        (gname.strip(), int(grank), int(gpoints)),
+                        "INSERT OR IGNORE INTO golfers (name) VALUES (?)",
+                        (gname.strip(),),
                     )
                     conn.commit()
                     st.success("Golfer added.")
