@@ -163,7 +163,24 @@ def get_picks_worksheet():
         except gspread.WorksheetNotFound:
             worksheet = sheet.add_worksheet(title="picks", rows=200, cols=4)
             worksheet.update("A1:D1", [["user", "tournament", "golfer", "created_at"]])
+    return worksheet
+
+
+def get_results_worksheet():
+    client = get_sheets_client()
+    sheet_id = get_sheets_id()
+    if not client or not sheet_id:
+        return None
+    try:
+        sheet = client.open_by_key(sheet_id)
+        try:
+            worksheet = sheet.worksheet("results")
+        except gspread.WorksheetNotFound:
+            worksheet = sheet.add_worksheet(title="results", rows=500, cols=5)
+            worksheet.update("A1:E1", [["tournament", "golfer", "purse", "position", "updated_at"]])
         return worksheet
+    except APIError:
+        return None
     except APIError:
         return None
 
@@ -418,6 +435,62 @@ def sync_picks_from_sheet(conn: sqlite3.Connection) -> bool:
     conn.commit()
     return restored > 0
 
+
+def sync_results_from_sheet(conn: sqlite3.Connection) -> bool:
+    worksheet = get_results_worksheet()
+    if not worksheet:
+        return False
+    try:
+        rows = worksheet.get_all_records()
+    except APIError:
+        return False
+    if not rows:
+        return False
+    conn.execute("DELETE FROM results")
+    restored = 0
+    for row in rows:
+        tournament = conn.execute("SELECT id FROM tournaments WHERE name = ?", (row.get("tournament"),)).fetchone()
+        golfer = conn.execute("SELECT id FROM golfers WHERE name = ?", (row.get("golfer"),)).fetchone()
+        if not tournament or not golfer:
+            continue
+        purse = row.get("purse") or 0
+        position = row.get("position")
+        conn.execute(
+            "INSERT OR IGNORE INTO results (tournament_id, golfer_id, purse, position) VALUES (?, ?, ?, ?)",
+            (tournament["id"], golfer["id"], int(purse), int(position) if position else None),
+        )
+        restored += 1
+    conn.commit()
+    return restored > 0
+
+
+def sync_results_to_sheet(conn: sqlite3.Connection) -> None:
+    worksheet = get_results_worksheet()
+    if not worksheet:
+        return
+    rows = conn.execute(
+        """
+        SELECT tournaments.name as tournament,
+               golfers.name as golfer,
+               results.purse as purse,
+               results.position as position
+        FROM results
+        JOIN tournaments ON tournaments.id = results.tournament_id
+        JOIN golfers ON golfers.id = results.golfer_id
+        ORDER BY tournaments.start_date, golfers.name
+        """
+    ).fetchall()
+    values = [["tournament", "golfer", "purse", "position", "updated_at"]]
+    now = datetime.utcnow().isoformat()
+    for row in rows:
+        values.append(
+            [row["tournament"], row["golfer"], row["purse"] or 0, row["position"] or "", now]
+        )
+    try:
+        worksheet.clear()
+        worksheet.update("A1", values)
+    except APIError:
+        return
 def sync_picks_to_sheet(conn: sqlite3.Connection) -> None:
     worksheet = get_picks_worksheet()
     if not worksheet:
@@ -451,6 +524,11 @@ def persist_picks(conn: sqlite3.Connection) -> None:
     else:
         save_picks_snapshot(conn)
 
+
+def persist_results(conn: sqlite3.Connection) -> None:
+    if get_results_worksheet():
+        sync_results_to_sheet(conn)
+
 def hydrate_picks(conn: sqlite3.Connection) -> None:
     worksheet = get_picks_worksheet()
     if worksheet:
@@ -458,6 +536,12 @@ def hydrate_picks(conn: sqlite3.Connection) -> None:
             return
     if conn.execute("SELECT COUNT(*) FROM picks").fetchone()[0] == 0:
         restore_picks_snapshot(conn)
+
+
+def hydrate_results(conn: sqlite3.Connection) -> None:
+    if get_results_worksheet():
+        if sync_results_from_sheet(conn):
+            return
 
 
 def restore_picks_snapshot(conn: sqlite3.Connection) -> bool:
@@ -1051,6 +1135,8 @@ def main():
     init_db(conn)
     seed_if_needed(conn)
     hydrate_picks(conn)
+    if conn.execute("SELECT COUNT(*) FROM results").fetchone()[0] == 0:
+        hydrate_results(conn)
 
     st.markdown(
         textwrap.dedent(
@@ -1589,6 +1675,7 @@ def main():
                         (t_id, g_id, int(purse), int(position)),
                     )
                     conn.commit()
+                    persist_results(conn)
                     st.success("Result saved.")
 
             with col_b:
@@ -1648,6 +1735,7 @@ def main():
                                 )
                                 imported += 1
                             conn.commit()
+                            persist_results(conn)
                             st.success(f"Imported {imported} results from clipboard.")
 
             st.markdown("#### RapidAPI Sync (Live Golf Data)")
@@ -1747,13 +1835,15 @@ def main():
                     attempted_id = tourn_id.strip() or None
                     attempted_year = int(year)
                     try:
-                        updated, skipped = sync_results_with_autoresolve(
-                            conn,
-                            attempted_id,
-                            int(attempted_year or year),
-                            selected["id"],
-                        )
-                        st.success(f"Synced {updated} results. Skipped {skipped} names not in roster.")
+                            updated, skipped = sync_results_with_autoresolve(
+                                conn,
+                                attempted_id,
+                                int(attempted_year or year),
+                                selected["id"],
+                            )
+                            if updated > 0:
+                                persist_results(conn)
+                            st.success(f"Synced {updated} results. Skipped {skipped} names not in roster.")
                     except requests.HTTPError as exc:
                         detail = ""
                         if exc.response is not None:
