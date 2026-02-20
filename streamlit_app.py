@@ -163,7 +163,9 @@ def get_picks_worksheet():
         except gspread.WorksheetNotFound:
             worksheet = sheet.add_worksheet(title="picks", rows=200, cols=4)
             worksheet.update("A1:D1", [["user", "tournament", "golfer", "created_at"]])
-    return worksheet
+        return worksheet
+    except APIError:
+        return None
 
 
 def get_results_worksheet():
@@ -179,8 +181,6 @@ def get_results_worksheet():
             worksheet = sheet.add_worksheet(title="results", rows=500, cols=5)
             worksheet.update("A1:E1", [["tournament", "golfer", "purse", "position", "updated_at"]])
         return worksheet
-    except APIError:
-        return None
     except APIError:
         return None
 
