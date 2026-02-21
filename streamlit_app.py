@@ -1298,25 +1298,37 @@ def main():
             return ""
 
         current = get_today_tournament(conn)
-        st.subheader("Current Tournament")
-        if current:
-            st.write(
-                f"{current['name']} ({format_short_date(current['start_date'])} to {format_short_date(current['end_date'])}){tournament_badge(current)}"
-            )
-            next_up = get_next_tournament(conn)
-            if next_up:
-                st.subheader("Upcoming Tournament")
+        col_tournaments, col_rules = st.columns([2, 1])
+        with col_tournaments:
+            st.subheader("Current Tournament")
+            if current:
                 st.write(
-                    f"{next_up['name']} ({format_short_date(next_up['start_date'])} to {format_short_date(next_up['end_date'])}){tournament_badge(next_up)}"
+                    f"{current['name']} ({format_short_date(current['start_date'])} to {format_short_date(current['end_date'])}){tournament_badge(current)}"
                 )
-        else:
-            next_up = get_next_tournament(conn)
-            if next_up:
-                st.write(
-                    f"Next up: {next_up['name']} ({format_short_date(next_up['start_date'])} to {format_short_date(next_up['end_date'])})"
-                )
+                next_up = get_next_tournament(conn)
+                if next_up:
+                    st.subheader("Upcoming Tournament")
+                    st.write(
+                        f"{next_up['name']} ({format_short_date(next_up['start_date'])} to {format_short_date(next_up['end_date'])}){tournament_badge(next_up)}"
+                    )
             else:
-                st.write("No tournament in progress today.")
+                next_up = get_next_tournament(conn)
+                if next_up:
+                    st.write(
+                        f"Next up: {next_up['name']} ({format_short_date(next_up['start_date'])} to {format_short_date(next_up['end_date'])})"
+                    )
+                else:
+                    st.write("No tournament in progress today.")
+
+        with col_rules:
+            st.subheader("Rules")
+            st.markdown(
+                "- One pick per tournament\n"
+                "- Majors = two picks\n"
+                "- One non-major double pick per season\n"
+                "- Picks lock Thursday 7:00 AM ET\n"
+                "- Earnings = leaderboard totals"
+            )
 
     with tab_picks:
         st.subheader("Weekly Picks")
