@@ -1290,17 +1290,24 @@ def main():
         )
         st.markdown(table_html, unsafe_allow_html=True)
 
+        def tournament_badge(row):
+            if row["is_major"]:
+                return " **MAJOR**"
+            if row["is_signature"]:
+                return " **SIGNATURE**"
+            return ""
+
         current = get_today_tournament(conn)
         st.subheader("Current Tournament")
         if current:
             st.write(
-                f"{current['name']} ({format_short_date(current['start_date'])} to {format_short_date(current['end_date'])})"
+                f"{current['name']} ({format_short_date(current['start_date'])} to {format_short_date(current['end_date'])}){tournament_badge(current)}"
             )
             next_up = get_next_tournament(conn)
             if next_up:
                 st.subheader("Upcoming Tournament")
                 st.write(
-                    f"{next_up['name']} ({format_short_date(next_up['start_date'])} to {format_short_date(next_up['end_date'])})"
+                    f"{next_up['name']} ({format_short_date(next_up['start_date'])} to {format_short_date(next_up['end_date'])}){tournament_badge(next_up)}"
                 )
         else:
             next_up = get_next_tournament(conn)
