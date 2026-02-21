@@ -1296,6 +1296,12 @@ def main():
             st.write(
                 f"{current['name']} ({format_short_date(current['start_date'])} to {format_short_date(current['end_date'])})"
             )
+            next_up = get_next_tournament(conn)
+            if next_up:
+                st.subheader("Upcoming Tournament")
+                st.write(
+                    f"{next_up['name']} ({format_short_date(next_up['start_date'])} to {format_short_date(next_up['end_date'])})"
+                )
         else:
             next_up = get_next_tournament(conn)
             if next_up:
