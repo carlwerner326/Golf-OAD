@@ -980,9 +980,21 @@ def format_short_date(value: str) -> str:
 def parse_clipboard_results(raw: str):
     rows = []
     errors = []
+    line_re = re.compile(
+        r"^(?:P)?(?P<pos>\d+)\s+(?P<name>.+?)\s+\$?(?P<purse>[\d,]+(?:\.\d{2})?)\s*$",
+        re.IGNORECASE,
+    )
     for idx, line in enumerate(raw.splitlines(), start=1):
         text = line.strip()
         if not text:
+            continue
+
+        match = line_re.match(text)
+        if match:
+            pos = match.group("pos")
+            name = match.group("name").strip()
+            purse = f"${match.group('purse')}"
+            rows.append((name, pos, purse))
             continue
 
         # Tab-delimited: Position<TAB>Name<TAB>$Purse
@@ -990,10 +1002,16 @@ def parse_clipboard_results(raw: str):
             parts = [p.strip() for p in text.split("\t") if p.strip()]
             if len(parts) >= 3:
                 pos_token = parts[0].upper()
-                pos = pos_token[1:] if pos_token.startswith("P") and pos_token[1:].isdigit() else pos_token if pos_token.isdigit() else None
+                pos = (
+                    pos_token[1:]
+                    if pos_token.startswith("P") and pos_token[1:].isdigit()
+                    else pos_token
+                    if pos_token.isdigit()
+                    else None
+                )
                 name = parts[1]
                 purse = next((p for p in parts[2:] if "$" in p), None)
-                if name and purse:
+                if name and purse and pos:
                     rows.append((name, pos, purse))
                     continue
 
@@ -1005,41 +1023,15 @@ def parse_clipboard_results(raw: str):
                 pos = None
                 purse = None
                 for part in parts[1:]:
-                    if "$" in part:
-                        purse = part
+                    if "$" in part or part.replace(",", "").replace(".", "").isdigit():
+                        purse = part if "$" in part else f"${part}"
                     elif part.isdigit():
                         pos = part
-                rows.append((name, pos, purse))
-                continue
+                if name and purse and pos:
+                    rows.append((name, pos, purse))
+                    continue
 
-        # Free-form: try to find $ amount and position
-        name = text
-        purse = None
-        pos = None
-
-        # Find purse (first $... number)
-        if "$" in text:
-            start = text.find("$")
-            purse = text[start:].split()[0]
-            name = text[:start].strip()
-
-        # Position at start like "1 Rory McIlroy $1,500,000"
-        tokens = name.split()
-        if tokens and tokens[0].isdigit():
-            pos = tokens[0]
-            name = " ".join(tokens[1:]).strip()
-        else:
-            # Position at end like "Rory McIlroy 1"
-            tail = name.split()[-1] if name.split() else ""
-            if tail.isdigit():
-                pos = tail
-                name = " ".join(name.split()[:-1]).strip()
-
-        if not name or not purse:
-            errors.append((idx, text))
-            continue
-
-        rows.append((name, pos, purse))
+        errors.append((idx, text))
     return rows, errors
 
 
@@ -1253,7 +1245,7 @@ def main():
     )
 
     st.title("Golf One & Done Pool")
-    st.caption("Season-long One & Done pool. Week 1 started at WM Phoenix Open.")
+    # Subtitle removed per user preference.
 
     maybe_run_scheduled_sync(conn)
 
@@ -1678,7 +1670,7 @@ def main():
 
             with col_b:
                 st.markdown("**Paste From Clipboard**")
-                st.caption("Paste PGA Tour results: P1 <tab> Name <tab> ... <tab> $Purse")
+                st.caption("Paste results: \"3 Jake Knapp $400,987\" (position, name, purse). One per line.")
                 tournament_for_clip = st.selectbox(
                     "Tournament (for clipboard import)",
                     [t["name"] for t in tournaments],
