@@ -186,6 +186,22 @@ def get_results_worksheet():
     except APIError:
         return None
 
+def get_users_worksheet():
+    client = get_sheets_client()
+    sheet_id = get_sheets_id()
+    if not client or not sheet_id:
+        return None
+    try:
+        sheet = client.open_by_key(sheet_id)
+        try:
+            worksheet = sheet.worksheet("users")
+        except gspread.WorksheetNotFound:
+            worksheet = sheet.add_worksheet(title="users", rows=200, cols=5)
+            worksheet.update("A1:E1", [["name", "pin_hash", "is_admin", "double_pick_used", "updated_at"]])
+        return worksheet
+    except APIError:
+        return None
+
 def load_env_file(path: str = ".env") -> None:
     if not os.path.exists(path):
         return
@@ -432,21 +448,25 @@ def sync_picks_from_sheet(conn: sqlite3.Connection) -> bool:
         return False
     if not rows:
         return False
-    conn.execute("DELETE FROM picks")
-    restored = 0
+    pending = []
     for row in rows:
         user = conn.execute("SELECT id FROM users WHERE name = ?", (row.get("user"),)).fetchone()
         tournament = conn.execute("SELECT id FROM tournaments WHERE name = ?", (row.get("tournament"),)).fetchone()
         golfer = conn.execute("SELECT id FROM golfers WHERE name = ?", (row.get("golfer"),)).fetchone()
         if not user or not tournament or not golfer:
             continue
-        conn.execute(
-            "INSERT OR IGNORE INTO picks (user_id, tournament_id, golfer_id, created_at) VALUES (?, ?, ?, ?)",
-            (user["id"], tournament["id"], golfer["id"], row.get("created_at") or datetime.utcnow().isoformat()),
+        pending.append(
+            (user["id"], tournament["id"], golfer["id"], row.get("created_at") or datetime.utcnow().isoformat())
         )
-        restored += 1
+    if not pending:
+        return False
+    conn.execute("DELETE FROM picks")
+    conn.executemany(
+        "INSERT OR IGNORE INTO picks (user_id, tournament_id, golfer_id, created_at) VALUES (?, ?, ?, ?)",
+        pending,
+    )
     conn.commit()
-    return restored > 0
+    return True
 
 
 def sync_results_from_sheet(conn: sqlite3.Connection) -> bool:
@@ -459,8 +479,7 @@ def sync_results_from_sheet(conn: sqlite3.Connection) -> bool:
         return False
     if not rows:
         return False
-    conn.execute("DELETE FROM results")
-    restored = 0
+    pending = []
     for row in rows:
         tournament = conn.execute("SELECT id FROM tournaments WHERE name = ?", (row.get("tournament"),)).fetchone()
         golfer = conn.execute("SELECT id FROM golfers WHERE name = ?", (row.get("golfer"),)).fetchone()
@@ -468,13 +487,16 @@ def sync_results_from_sheet(conn: sqlite3.Connection) -> bool:
             continue
         purse = row.get("purse") or 0
         position = row.get("position")
-        conn.execute(
-            "INSERT OR IGNORE INTO results (tournament_id, golfer_id, purse, position) VALUES (?, ?, ?, ?)",
-            (tournament["id"], golfer["id"], int(purse), int(position) if position else None),
-        )
-        restored += 1
+        pending.append((tournament["id"], golfer["id"], int(purse), int(position) if position else None))
+    if not pending:
+        return False
+    conn.execute("DELETE FROM results")
+    conn.executemany(
+        "INSERT OR IGNORE INTO results (tournament_id, golfer_id, purse, position) VALUES (?, ?, ?, ?)",
+        pending,
+    )
     conn.commit()
-    return restored > 0
+    return True
 
 
 def sync_results_to_sheet(conn: sqlite3.Connection) -> None:
@@ -498,6 +520,64 @@ def sync_results_to_sheet(conn: sqlite3.Connection) -> None:
     for row in rows:
         values.append(
             [row["tournament"], row["golfer"], row["purse"] or 0, row["position"] or "", now]
+        )
+    try:
+        worksheet.clear()
+        worksheet.update("A1", values)
+    except APIError:
+        return
+
+def sync_users_from_sheet(conn: sqlite3.Connection) -> bool:
+    worksheet = get_users_worksheet()
+    if not worksheet:
+        return False
+    try:
+        rows = worksheet.get_all_records()
+    except APIError:
+        return False
+    if not rows:
+        return False
+    restored = 0
+    for row in rows:
+        name = (row.get("name") or "").strip()
+        if not name:
+            continue
+        pin_hash = (row.get("pin_hash") or "").strip() or None
+        is_admin = 1 if str(row.get("is_admin") or "0").strip() in ("1", "true", "True") else 0
+        double_pick_used = 1 if str(row.get("double_pick_used") or "0").strip() in ("1", "true", "True") else 0
+        existing = conn.execute("SELECT id, pin_hash FROM users WHERE name = ?", (name,)).fetchone()
+        if existing:
+            if pin_hash:
+                conn.execute(
+                    "UPDATE users SET pin_hash = ?, is_admin = ?, double_pick_used = ? WHERE id = ?",
+                    (pin_hash, is_admin, double_pick_used, existing["id"]),
+                )
+            else:
+                conn.execute(
+                    "UPDATE users SET is_admin = ?, double_pick_used = ? WHERE id = ?",
+                    (is_admin, double_pick_used, existing["id"]),
+                )
+        else:
+            conn.execute(
+                "INSERT INTO users (name, pin_hash, is_admin, double_pick_used) VALUES (?, ?, ?, ?)",
+                (name, pin_hash, is_admin, double_pick_used),
+            )
+        restored += 1
+    conn.commit()
+    return restored > 0
+
+def sync_users_to_sheet(conn: sqlite3.Connection) -> None:
+    worksheet = get_users_worksheet()
+    if not worksheet:
+        return
+    rows = conn.execute(
+        "SELECT name, pin_hash, is_admin, double_pick_used FROM users ORDER BY name"
+    ).fetchall()
+    values = [["name", "pin_hash", "is_admin", "double_pick_used", "updated_at"]]
+    now = datetime.utcnow().isoformat()
+    for row in rows:
+        values.append(
+            [row["name"], row["pin_hash"] or "", row["is_admin"], row["double_pick_used"], now]
         )
     try:
         worksheet.clear()
@@ -537,6 +617,10 @@ def persist_picks(conn: sqlite3.Connection) -> None:
     else:
         save_picks_snapshot(conn)
 
+def persist_users(conn: sqlite3.Connection) -> None:
+    if get_users_worksheet():
+        sync_users_to_sheet(conn)
+
 
 def persist_results(conn: sqlite3.Connection) -> None:
     if get_results_worksheet():
@@ -549,6 +633,12 @@ def hydrate_picks(conn: sqlite3.Connection) -> None:
             return
     if conn.execute("SELECT COUNT(*) FROM picks").fetchone()[0] == 0:
         restore_picks_snapshot(conn)
+
+def hydrate_users(conn: sqlite3.Connection) -> None:
+    if get_users_worksheet():
+        if sync_users_from_sheet(conn):
+            return
+        sync_users_to_sheet(conn)
 
 
 def hydrate_results(conn: sqlite3.Connection) -> None:
@@ -1149,6 +1239,7 @@ def login_gate(conn: sqlite3.Connection) -> None:
                     (hash_pin(pin), user["id"]),
                 )
                 conn.commit()
+                persist_users(conn)
                 st.session_state["current_user_id"] = user["id"]
                 st.rerun()
         st.stop()
@@ -1203,9 +1294,9 @@ def main():
     conn = get_conn()
     init_db(conn)
     seed_if_needed(conn)
+    hydrate_users(conn)
     hydrate_picks(conn)
-    if conn.execute("SELECT COUNT(*) FROM results").fetchone()[0] == 0:
-        hydrate_results(conn)
+    hydrate_results(conn)
 
     login_gate(conn)
 
@@ -1732,9 +1823,10 @@ def main():
                                     "UPDATE users SET double_pick_used = 1 WHERE id = ?",
                                     (user_id,),
                                 )
-                        conn.commit()
-                        persist_picks(conn)
-                        st.success("Pick saved.")
+                                persist_users(conn)
+                    conn.commit()
+                    persist_picks(conn)
+                    st.success("Pick saved.")
                         st.rerun()
 
 
@@ -1943,10 +2035,11 @@ def main():
                                     (user_id, tournament_id, second_golfer_id, datetime.utcnow().isoformat()),
                                 )
                                 if not is_major and use_double_pick:
-                                    conn.execute(
-                                        "UPDATE users SET double_pick_used = 1 WHERE id = ?",
-                                        (user_id,),
-                                    )
+                                conn.execute(
+                                    "UPDATE users SET double_pick_used = 1 WHERE id = ?",
+                                    (user_id,),
+                                )
+                                persist_users(conn)
                             conn.commit()
                             persist_picks(conn)
                             st.success("Pick saved.")
