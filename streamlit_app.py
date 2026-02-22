@@ -1592,15 +1592,16 @@ def main():
                 tag = "S"
             tag_html = f'<span class="schedule-tag">({tag})</span>' if tag else ""
             cards.append(
-                f"""
-                <div class="schedule-card">
-                  <div class="schedule-name">{row['name']}{tag_html}</div>
-                  <div class="schedule-meta">{format_short_date(row['start_date'])} to {format_short_date(row['end_date'])}</div>
-                  <div class="schedule-meta">{format_money(row['purse']) if row['purse'] else '—'}</div>
-                </div>
-                """
+                f"<div class=\"schedule-card\">"
+                f"<div class=\"schedule-name\">{row['name']}{tag_html}</div>"
+                f"<div class=\"schedule-meta\">{format_short_date(row['start_date'])} to {format_short_date(row['end_date'])}</div>"
+                f"<div class=\"schedule-meta\">{format_money(row['purse']) if row['purse'] else '—'}</div>"
+                f"</div>"
             )
-        st.markdown(f"<div class=\"schedule-list\">{''.join(cards)}</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div class=\"schedule-list\">{''.join(cards)}</div>",
+            unsafe_allow_html=True,
+        )
 
     with tab_players:
         st.subheader("Player Roster")
