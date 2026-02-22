@@ -1365,12 +1365,7 @@ def main():
     login_gate(conn)
 
     current_user = get_current_user(conn)
-    if current_user:
-        st.markdown("<div class='signout-inline'>", unsafe_allow_html=True)
-        if st.button("Sign Out", key="signout_inline"):
-            st.session_state.pop("current_user_id", None)
-            st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
+    # Sign out removed from UI (keep login flow only)
 
     st.markdown(
         textwrap.dedent(
