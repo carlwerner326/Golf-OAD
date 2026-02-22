@@ -1352,7 +1352,7 @@ def maybe_run_scheduled_sync(conn: sqlite3.Connection):
 
 def main():
     load_env_file()
-    st.set_page_config(page_title="Golf One & Done Pool", layout="wide")
+    st.set_page_config(page_title="SplatStack Sports", layout="wide")
     admin_gate()
 
     conn = get_conn()
@@ -1588,7 +1588,7 @@ def main():
         unsafe_allow_html=True,
     )
 
-    st.title("Golf One & Done Pool")
+    st.title("SplatStack Sports")
     # Subtitle removed per user preference.
 
     maybe_run_scheduled_sync(conn)
@@ -2361,6 +2361,11 @@ def main():
                         st.error(f"RapidAPI sync failed: {exc}")
 
             st.caption("RapidAPI requires your key in `.env` for local use, or Streamlit secrets when deployed.")
+
+    st.markdown(
+        "<div style='margin-top: 32px; color: #8c939c; font-size: 12px;'>© 2026 SplatStack</div>",
+        unsafe_allow_html=True,
+    )
 
 
 if __name__ == "__main__":
