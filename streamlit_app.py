@@ -171,7 +171,7 @@ def get_cached_sheets_client(ttl_seconds: int = 300):
     cached_at = SHEETS_CACHE.get("client_at", 0.0)
     if cached and (time_mod.time() - cached_at) < ttl_seconds:
         return cached
-    client = get_cached_sheets_client()
+    client = get_sheets_client()
     SHEETS_CACHE["client"] = client
     SHEETS_CACHE["client_at"] = time_mod.time()
     return client
