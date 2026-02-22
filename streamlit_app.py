@@ -1827,7 +1827,7 @@ def main():
                     conn.commit()
                     persist_picks(conn)
                     st.success("Pick saved.")
-                        st.rerun()
+                    st.rerun()
 
 
         # admin pick management moved to Admin tab
