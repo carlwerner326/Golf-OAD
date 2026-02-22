@@ -4,6 +4,7 @@ import hashlib
 import re
 import sqlite3
 import textwrap
+import time as time_mod
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 from typing import Optional
@@ -23,6 +24,11 @@ except ImportError:
     APIError = Exception
     SHEETS_AVAILABLE = False
     SHEETS_LAST_ERROR = "gspread not installed"
+SHEETS_CACHE = {
+    "client": None,
+    "client_at": 0.0,
+    "records": {},
+}
 import streamlit as st
 
 BDL_BASE = "https://api.balldontlie.io/pga/v1"
@@ -160,9 +166,47 @@ def get_sheets_client():
         SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
         return None
 
+def get_cached_sheets_client(ttl_seconds: int = 300):
+    cached = SHEETS_CACHE.get("client")
+    cached_at = SHEETS_CACHE.get("client_at", 0.0)
+    if cached and (time_mod.time() - cached_at) < ttl_seconds:
+        return cached
+    client = get_cached_sheets_client()
+    SHEETS_CACHE["client"] = client
+    SHEETS_CACHE["client_at"] = time_mod.time()
+    return client
+
+def clear_sheet_records_cache(sheet_name: str) -> None:
+    records = SHEETS_CACHE.get("records", {})
+    if sheet_name in records:
+        del records[sheet_name]
+
+def get_cached_sheet_records(sheet_name: str, ttl_seconds: int = 120):
+    cached = SHEETS_CACHE.get("records", {}).get(sheet_name)
+    now = time_mod.time()
+    if cached and (now - cached["at"]) < ttl_seconds:
+        return cached["rows"]
+    worksheet = None
+    if sheet_name == "picks":
+        worksheet = get_picks_worksheet()
+    elif sheet_name == "results":
+        worksheet = get_results_worksheet()
+    elif sheet_name == "users":
+        worksheet = get_users_worksheet()
+    if not worksheet:
+        return None
+    try:
+        rows = worksheet.get_all_records()
+    except APIError as exc:
+        global SHEETS_LAST_ERROR
+        SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
+        return None
+    SHEETS_CACHE.setdefault("records", {})[sheet_name] = {"rows": rows, "at": now}
+    return rows
+
 def get_picks_worksheet():
     global SHEETS_LAST_ERROR
-    client = get_sheets_client()
+    client = get_cached_sheets_client()
     sheet_id = get_sheets_id()
     if not client or not sheet_id:
         return None
@@ -181,7 +225,7 @@ def get_picks_worksheet():
 
 def get_results_worksheet():
     global SHEETS_LAST_ERROR
-    client = get_sheets_client()
+    client = get_cached_sheets_client()
     sheet_id = get_sheets_id()
     if not client or not sheet_id:
         return None
@@ -455,9 +499,8 @@ def sync_picks_from_sheet(conn: sqlite3.Connection) -> bool:
     worksheet = get_picks_worksheet()
     if not worksheet:
         return False
-    try:
-        rows = worksheet.get_all_records()
-    except APIError:
+    rows = get_cached_sheet_records("picks")
+    if rows is None:
         return False
     if not rows:
         return False
@@ -493,9 +536,8 @@ def sync_results_from_sheet(conn: sqlite3.Connection) -> bool:
     worksheet = get_results_worksheet()
     if not worksheet:
         return False
-    try:
-        rows = worksheet.get_all_records()
-    except APIError:
+    rows = get_cached_sheet_records("results")
+    if rows is None:
         return False
     if not rows:
         return False
@@ -544,6 +586,7 @@ def sync_results_to_sheet(conn: sqlite3.Connection) -> None:
     try:
         worksheet.clear()
         worksheet.update(values=values, range_name="A1")
+        clear_sheet_records_cache("results")
     except APIError:
         return
 
@@ -551,9 +594,8 @@ def sync_users_from_sheet(conn: sqlite3.Connection) -> bool:
     worksheet = get_users_worksheet()
     if not worksheet:
         return False
-    try:
-        rows = worksheet.get_all_records()
-    except APIError:
+    rows = get_cached_sheet_records("users")
+    if rows is None:
         return False
     if not rows:
         return False
@@ -602,6 +644,7 @@ def sync_users_to_sheet(conn: sqlite3.Connection) -> None:
     try:
         worksheet.clear()
         worksheet.update(values=values, range_name="A1")
+        clear_sheet_records_cache("picks")
     except APIError:
         return
 def sync_picks_to_sheet(conn: sqlite3.Connection) -> None:
@@ -627,6 +670,7 @@ def sync_picks_to_sheet(conn: sqlite3.Connection) -> None:
     try:
         worksheet.clear()
         worksheet.update(values=values, range_name="A1")
+        clear_sheet_records_cache("users")
     except APIError:
         return
 
@@ -1978,10 +2022,16 @@ def main():
                 st.markdown("#### Storage Status")
                 sheet_id = get_sheets_id()
                 if sheet_id:
-                    picks_ws = get_picks_worksheet()
-                    results_ws = get_results_worksheet()
-                    users_ws = get_users_worksheet()
-                    if picks_ws or results_ws or users_ws:
+                    client = get_cached_sheets_client()
+                    connected = False
+                    if client:
+                        try:
+                            client.open_by_key(sheet_id)
+                            connected = True
+                        except Exception as exc:
+                            global SHEETS_LAST_ERROR
+                            SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
+                    if connected:
                         st.success("Google Sheets storage: connected.")
                         sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
                         st.markdown(f"[Open Picks Sheet]({sheet_url})")
