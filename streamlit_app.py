@@ -1,9 +1,11 @@
 import os
 import json
+import hashlib
 import re
 import sqlite3
 import textwrap
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 from typing import Optional
 
 import requests
@@ -216,7 +218,9 @@ def init_db(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS users (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL UNIQUE,
-          double_pick_used INTEGER NOT NULL DEFAULT 0
+          double_pick_used INTEGER NOT NULL DEFAULT 0,
+          pin_hash TEXT,
+          is_admin INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS golfers (
@@ -275,6 +279,10 @@ def init_db(conn: sqlite3.Connection) -> None:
     user_columns = [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]
     if "double_pick_used" not in user_columns:
         conn.execute("ALTER TABLE users ADD COLUMN double_pick_used INTEGER NOT NULL DEFAULT 0")
+    if "pin_hash" not in user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN pin_hash TEXT")
+    if "is_admin" not in user_columns:
+        conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
     conn.commit()
 
     # Migrate picks table if it still has the UNIQUE(user_id, tournament_id) constraint.
@@ -315,7 +323,10 @@ def init_db(conn: sqlite3.Connection) -> None:
 
 def seed_if_needed(conn: sqlite3.Connection) -> None:
     if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
-        conn.executemany("INSERT INTO users (name) VALUES (?)", [(u,) for u in USERS])
+        conn.executemany(
+            "INSERT INTO users (name, is_admin) VALUES (?, ?)",
+            [(u, 1 if u == "Carl" else 0) for u in USERS],
+        )
 
     # Remove tournaments we don't want in the schedule
     conn.execute("DELETE FROM tournaments WHERE name = ?", ("Puerto Rico Open",))
@@ -1084,8 +1095,72 @@ def get_current_or_next_tournament_index(tournaments) -> int:
     return get_next_tournament_index(tournaments)
 
 
-def is_admin() -> bool:
-    return True
+def get_pin_salt() -> str:
+    return os.getenv("PIN_SALT", "golf-oad")
+
+
+def hash_pin(pin: str) -> str:
+    salted = f"{pin}:{get_pin_salt()}"
+    return hashlib.sha256(salted.encode("utf-8")).hexdigest()
+
+
+def get_current_user(conn: sqlite3.Connection):
+    user_id = st.session_state.get("current_user_id")
+    if not user_id:
+        return None
+    return conn.execute(
+        "SELECT id, name, is_admin FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+
+
+def is_admin(conn: sqlite3.Connection) -> bool:
+    user = get_current_user(conn)
+    return bool(user and user["is_admin"])
+
+
+def get_reveal_time(start_date_str: str) -> datetime:
+    tz = ZoneInfo("America/New_York")
+    start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+    return datetime.combine(start_date, time(7, 0), tzinfo=tz)
+
+
+def login_gate(conn: sqlite3.Connection) -> None:
+    if get_current_user(conn):
+        return
+
+    st.subheader("Sign In")
+    users = conn.execute("SELECT id, name, is_admin, pin_hash FROM users ORDER BY name").fetchall()
+    user_name = st.selectbox("User", [u["name"] for u in users], key="login_user")
+    user = next(u for u in users if u["name"] == user_name)
+    pin = st.text_input("PIN (4–6 digits)", type="password", key="login_pin")
+
+    if user["pin_hash"] is None and user["is_admin"]:
+        st.info("Set your admin PIN to continue.")
+        pin_confirm = st.text_input("Confirm PIN", type="password", key="login_pin_confirm")
+        if st.button("Set PIN"):
+            if pin != pin_confirm or not pin or len(pin) not in (4, 5, 6) or not pin.isdigit():
+                st.error("PIN must be 4–6 digits and match.")
+            else:
+                conn.execute(
+                    "UPDATE users SET pin_hash = ? WHERE id = ?",
+                    (hash_pin(pin), user["id"]),
+                )
+                conn.commit()
+                st.session_state["current_user_id"] = user["id"]
+                st.rerun()
+        st.stop()
+
+    if st.button("Sign In"):
+        if not pin or len(pin) not in (4, 5, 6) or not pin.isdigit():
+            st.error("Enter a 4–6 digit PIN.")
+        elif user["pin_hash"] != hash_pin(pin):
+            st.error("Invalid PIN.")
+        else:
+            st.session_state["current_user_id"] = user["id"]
+            st.rerun()
+
+    st.stop()
 
 
 def admin_gate():
@@ -1129,6 +1204,14 @@ def main():
     hydrate_picks(conn)
     if conn.execute("SELECT COUNT(*) FROM results").fetchone()[0] == 0:
         hydrate_results(conn)
+
+    login_gate(conn)
+
+    current_user = get_current_user(conn)
+    if current_user:
+        if st.sidebar.button("Sign Out"):
+            st.session_state.pop("current_user_id", None)
+            st.rerun()
 
     st.markdown(
         textwrap.dedent(
@@ -1264,7 +1347,10 @@ def main():
                 font-weight: 700;
                 color: #f0c84b;
               }
-              .picks-row {
+              .picks-row-marker {
+                display: none;
+              }
+              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) {
                 border: 2px solid #0c4b2b;
                 border-radius: 999px;
                 padding: 10px 14px;
@@ -1273,14 +1359,10 @@ def main():
                 display: flex;
                 align-items: center;
                 gap: 12px;
-                justify-content: space-between;
+                flex-wrap: nowrap;
               }
-              .picks-row-left {
-                display: flex;
-                align-items: center;
-                gap: 16px;
-                flex: 1;
-                min-width: 0;
+              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) > div {
+                padding: 0 !important;
               }
               .picks-user {
                 color: #0c4b2b;
@@ -1297,16 +1379,6 @@ def main():
               .picks-menu {
                 color: #0c4b2b;
                 font-weight: 700;
-              }
-              .picks-menu-button {
-                background: transparent;
-                border: none;
-                padding: 0;
-                margin: 0;
-                color: #0c4b2b;
-                font-weight: 700;
-                font-size: 18px;
-                cursor: pointer;
               }
               .picks-user {
                 color: #0c4b2b;
@@ -1327,9 +1399,16 @@ def main():
 
     maybe_run_scheduled_sync(conn)
 
-    tab_dashboard, tab_picks, tab_tournaments, tab_players, tab_admin = st.tabs(
-        ["Dashboard", "Picks", "Schedule", "Players", "Admin"]
-    )
+    if is_admin(conn):
+        tab_dashboard, tab_picks, tab_tournaments, tab_players, tab_admin = st.tabs(
+            ["Dashboard", "Picks", "Schedule", "Players", "Admin"]
+        )
+    else:
+        tab_dashboard, tab_picks, tab_tournaments = st.tabs(
+            ["Dashboard", "Picks", "Schedule"]
+        )
+        tab_players = None
+        tab_admin = None
 
     with tab_dashboard:
         st.subheader("Leaderboard")
@@ -1410,6 +1489,9 @@ def main():
 
     with tab_picks:
         st.subheader("Weekly Picks")
+        current_user = get_current_user(conn)
+        current_user_name = current_user["name"] if current_user else None
+        admin_view = is_admin(conn)
         tournament_order = conn.execute(
             "SELECT id, name, start_date, end_date, purse FROM tournaments ORDER BY start_date"
         ).fetchall()
@@ -1442,6 +1524,16 @@ def main():
             selected_name = tournament_label_map.get(
                 tournament_label,
                 tournament_order[next_index]["name"] if tournament_order else "",
+            )
+            selected_tournament_row = next(
+                (row for row in tournament_order if row["name"] == selected_name),
+                None,
+            )
+            now_et = datetime.now(ZoneInfo("America/New_York"))
+            reveal_time = (
+                get_reveal_time(selected_tournament_row["start_date"])
+                if selected_tournament_row
+                else now_et
             )
             pending_delete_user = st.session_state.get("delete_user")
             pending_delete_tourn = st.session_state.get("delete_tourn")
@@ -1490,27 +1582,29 @@ def main():
                 (selected_name,),
             ).fetchall()
             for row in tournament_picks:
-                golfer_text = (row["golfer_list"] or "").replace("\n", " / ")
+                show_locked = (
+                    not admin_view
+                    and row["user"] != current_user_name
+                    and now_et < reveal_time
+                )
+                golfer_text = "🔒 Locked" if show_locked else (row["golfer_list"] or "").replace("\n", " / ")
+                can_manage = admin_view or (
+                    row["user"] == current_user_name and now_et < reveal_time
+                )
                 row_key = f"menu_pick_{row['user']}"
-                st.markdown(
-                    f"""
-                    <div class="picks-row">
-                      <div class="picks-row-left">
-                        <span class="picks-user">{row['user']}</span>
-                        <span class="picks-golfer">{golfer_text}</span>
-                      </div>
-                      <div class="picks-menu">
-                        <form action="" method="get">
-                          <button class="picks-menu-button" type="submit" name="pick_menu" value="{row_key}">...</button>
-                        </form>
-                      </div>
-                    </div>
-                    """,
+                col_a, col_b, col_c = st.columns([2, 4, 1])
+                col_a.markdown(
+                    f"<span class='picks-row-marker'></span><span class='picks-user'>{row['user']}</span>",
                     unsafe_allow_html=True,
                 )
-                if st.query_params.get("pick_menu") == row_key:
-                    st.session_state["delete_user"] = row["user"]
-                    st.session_state["delete_tourn"] = selected_name
+                col_b.markdown(
+                    f"<span class='picks-golfer'>{golfer_text}</span>",
+                    unsafe_allow_html=True,
+                )
+                with col_c:
+                    if can_manage and st.button("...", key=row_key, type="secondary"):
+                        st.session_state["delete_user"] = row["user"]
+                        st.session_state["delete_tourn"] = selected_name
 
         with col_right:
             st.markdown("#### Picks By Player")
@@ -1540,7 +1634,7 @@ def main():
                 hide_index=True,
             )
 
-        if is_admin():
+        if is_admin(conn):
             st.markdown("#### Add Pick")
             users = conn.execute("SELECT id, name FROM users ORDER BY name").fetchall()
             tournaments = conn.execute(
@@ -1663,102 +1757,104 @@ def main():
             unsafe_allow_html=True,
         )
 
-    with tab_players:
-        st.subheader("Player Roster")
-        golfers = conn.execute(
-            "SELECT name FROM golfers WHERE active = 1 ORDER BY name"
-        ).fetchall()
-        golfer_names = [row["name"] for row in golfers]
-        st.selectbox("Search golfers", golfer_names)
+    if tab_players:
+        with tab_players:
+            st.subheader("Player Roster")
+            golfers = conn.execute(
+                "SELECT name FROM golfers WHERE active = 1 ORDER BY name"
+            ).fetchall()
+            golfer_names = [row["name"] for row in golfers]
+            st.selectbox("Search golfers", golfer_names)
 
-        if is_admin():
-            st.markdown("#### Add Golfer")
-            gname = st.text_input("Golfer name")
-            if st.button("Add Golfer", type="primary"):
-                if not gname.strip():
-                    st.error("Golfer name is required.")
-                else:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO golfers (name) VALUES (?)",
-                        (gname.strip(),),
-                    )
-                    conn.commit()
-                    st.success("Golfer added.")
-
-            st.markdown("#### Bulk Import Golfers")
-            bulk_golfers = st.text_area("Paste golfers", height=160)
-            st.caption("Format: Name only OR Name, Rank, Points (Rank/Points optional)")
-            if st.button("Import Golfers", type="primary"):
-                count = 0
-                for line in bulk_golfers.splitlines():
-                    parts = [p.strip() for p in line.split(",") if p.strip()]
-                    if not parts:
-                        continue
-                    name = parts[0]
-                    rank = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
-                    points = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else None
-                    conn.execute(
-                        "INSERT OR IGNORE INTO golfers (name, fedex_rank, fedex_points) VALUES (?, ?, ?)",
-                        (name, rank, points),
-                    )
-                    count += 1
-                conn.commit()
-                st.success(f"Imported {count} golfer lines.")
-
-            st.markdown("#### Replace Roster (Name Only)")
-            roster_text = st.text_area("Paste full roster (one golfer per line)", height=200, key="roster_replace")
-            st.caption("This will set all current golfers to inactive, then activate the pasted names.")
-            if st.button("Replace Roster", type="primary"):
-                names = [line.strip() for line in roster_text.splitlines() if line.strip()]
-                if not names:
-                    st.error("Paste at least one golfer.")
-                else:
-                    conn.execute("UPDATE golfers SET active = 0")
-                    for name in names:
+            if is_admin(conn):
+                st.markdown("#### Add Golfer")
+                gname = st.text_input("Golfer name")
+                if st.button("Add Golfer", type="primary"):
+                    if not gname.strip():
+                        st.error("Golfer name is required.")
+                    else:
                         conn.execute(
-                            "INSERT INTO golfers (name, active) VALUES (?, 1)\n"
-                            "ON CONFLICT(name) DO UPDATE SET active = 1, fedex_rank = NULL, fedex_points = NULL",
-                            (name,),
+                            "INSERT OR IGNORE INTO golfers (name) VALUES (?)",
+                            (gname.strip(),),
                         )
+                        conn.commit()
+                        st.success("Golfer added.")
+
+                st.markdown("#### Bulk Import Golfers")
+                bulk_golfers = st.text_area("Paste golfers", height=160)
+                st.caption("Format: Name only OR Name, Rank, Points (Rank/Points optional)")
+                if st.button("Import Golfers", type="primary"):
+                    count = 0
+                    for line in bulk_golfers.splitlines():
+                        parts = [p.strip() for p in line.split(",") if p.strip()]
+                        if not parts:
+                            continue
+                        name = parts[0]
+                        rank = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+                        points = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else None
+                        conn.execute(
+                            "INSERT OR IGNORE INTO golfers (name, fedex_rank, fedex_points) VALUES (?, ?, ?)",
+                            (name, rank, points),
+                        )
+                        count += 1
                     conn.commit()
-                    st.success(f"Roster replaced with {len(names)} golfers.")
+                    st.success(f"Imported {count} golfer lines.")
 
-    with tab_admin:
-        st.subheader("Admin Tools")
-        st.write("Admin owner: Carl")
+                st.markdown("#### Replace Roster (Name Only)")
+                roster_text = st.text_area("Paste full roster (one golfer per line)", height=200, key="roster_replace")
+                st.caption("This will set all current golfers to inactive, then activate the pasted names.")
+                if st.button("Replace Roster", type="primary"):
+                    names = [line.strip() for line in roster_text.splitlines() if line.strip()]
+                    if not names:
+                        st.error("Paste at least one golfer.")
+                    else:
+                        conn.execute("UPDATE golfers SET active = 0")
+                        for name in names:
+                            conn.execute(
+                                "INSERT INTO golfers (name, active) VALUES (?, 1)\n"
+                                "ON CONFLICT(name) DO UPDATE SET active = 1, fedex_rank = NULL, fedex_points = NULL",
+                                (name,),
+                            )
+                        conn.commit()
+                        st.success(f"Roster replaced with {len(names)} golfers.")
 
-        if not is_admin():
-            st.warning("Admin access required.")
-        else:
-            st.markdown("#### Storage Status")
-            if get_sheets_id():
-                if get_picks_worksheet():
-                    st.success("Google Sheets storage: connected.")
-                    sheet_url = f"https://docs.google.com/spreadsheets/d/{get_sheets_id()}/edit"
-                    st.markdown(f"[Open Picks Sheet]({sheet_url})")
+    if tab_admin:
+        with tab_admin:
+            st.subheader("Admin Tools")
+            st.write("Admin owner: Carl")
+
+            if not is_admin(conn):
+                st.warning("Admin access required.")
+            else:
+                st.markdown("#### Storage Status")
+                if get_sheets_id():
+                    if get_picks_worksheet():
+                        st.success("Google Sheets storage: connected.")
+                        sheet_url = f"https://docs.google.com/spreadsheets/d/{get_sheets_id()}/edit"
+                        st.markdown(f"[Open Picks Sheet]({sheet_url})")
+                    else:
+                        st.warning("Google Sheets storage: configured but not connected.")
                 else:
-                    st.warning("Google Sheets storage: configured but not connected.")
-            else:
-                st.info("Google Sheets storage: not configured. Using local backup.")
+                    st.info("Google Sheets storage: not configured. Using local backup.")
 
-            st.markdown("#### RapidAPI Key Check")
-            key_value = os.getenv("RAPIDAPI_KEY", "").strip()
-            host_value = os.getenv("RAPIDAPI_HOST", "live-golf-data.p.rapidapi.com").strip()
-            if key_value:
-                st.write(
-                    f"Key loaded: yes (length {len(key_value)}, last 4: {key_value[-4:]})"
-                )
-                st.write(f"Host: {host_value}")
-            else:
-                st.warning("Key loaded: no. Check Streamlit secrets for RAPIDAPI_KEY.")
-            if st.button("Test RapidAPI Connection", type="primary"):
-                try:
-                    _ = rapidapi_fetch_schedule(date.today().year)
-                    st.success("RapidAPI connection OK.")
-                except Exception as exc:
-                    st.error(f"RapidAPI test failed: {exc}")
+                st.markdown("#### RapidAPI Key Check")
+                key_value = os.getenv("RAPIDAPI_KEY", "").strip()
+                host_value = os.getenv("RAPIDAPI_HOST", "live-golf-data.p.rapidapi.com").strip()
+                if key_value:
+                    st.write(
+                        f"Key loaded: yes (length {len(key_value)}, last 4: {key_value[-4:]})"
+                    )
+                    st.write(f"Host: {host_value}")
+                else:
+                    st.warning("Key loaded: no. Check Streamlit secrets for RAPIDAPI_KEY.")
+                if st.button("Test RapidAPI Connection", type="primary"):
+                    try:
+                        _ = rapidapi_fetch_schedule(date.today().year)
+                        st.success("RapidAPI connection OK.")
+                    except Exception as exc:
+                        st.error(f"RapidAPI test failed: {exc}")
 
-            st.markdown("#### Results Entry")
+                st.markdown("#### Results Entry")
             tournaments = conn.execute("SELECT id, name, start_date, end_date FROM tournaments ORDER BY start_date").fetchall()
             golfers = conn.execute("SELECT id, name FROM golfers WHERE active = 1 ORDER BY name").fetchall()
             admin_default_idx = get_current_or_next_tournament_index(tournaments)
