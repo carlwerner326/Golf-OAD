@@ -327,6 +327,8 @@ def seed_if_needed(conn: sqlite3.Connection) -> None:
             "INSERT INTO users (name, is_admin) VALUES (?, ?)",
             [(u, 1 if u == "Carl" else 0) for u in USERS],
         )
+    else:
+        conn.execute("UPDATE users SET is_admin = 1 WHERE name = ?", ("Carl",))
 
     # Remove tournaments we don't want in the schedule
     conn.execute("DELETE FROM tournaments WHERE name = ?", ("Puerto Rico Open",))
@@ -1209,9 +1211,11 @@ def main():
 
     current_user = get_current_user(conn)
     if current_user:
-        if st.sidebar.button("Sign Out"):
+        st.markdown("<div class='signout-inline'>", unsafe_allow_html=True)
+        if st.button("Sign Out", key="signout_inline"):
             st.session_state.pop("current_user_id", None)
             st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown(
         textwrap.dedent(
@@ -1347,6 +1351,12 @@ def main():
                 font-weight: 700;
                 color: #f0c84b;
               }
+              .signout-inline {
+                position: fixed;
+                top: 18px;
+                right: 18px;
+                z-index: 1000;
+              }
               .picks-row-marker {
                 display: none;
               }
@@ -1360,6 +1370,11 @@ def main():
                 align-items: center;
                 gap: 12px;
                 flex-wrap: nowrap;
+              }
+              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) .stMarkdown,
+              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) .stMarkdown > div,
+              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) .stMarkdown > div > div {
+                background: transparent !important;
               }
               div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) > div {
                 padding: 0 !important;
