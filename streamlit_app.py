@@ -1537,7 +1537,7 @@ def main():
         current_user_name = current_user["name"] if current_user else None
         admin_view = is_admin(conn)
         tournament_order = conn.execute(
-            "SELECT id, name, start_date, end_date, purse FROM tournaments ORDER BY start_date"
+            "SELECT id, name, start_date, end_date, purse, is_major FROM tournaments ORDER BY start_date"
         ).fetchall()
         week_map = {row["name"]: idx + 1 for idx, row in enumerate(tournament_order)}
 
