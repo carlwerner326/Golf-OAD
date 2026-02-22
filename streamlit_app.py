@@ -1357,6 +1357,29 @@ def main():
                 right: 18px;
                 z-index: 1000;
               }
+              .picks-layout > div[data-testid="stHorizontalBlock"] {
+                background: transparent !important;
+                border: none !important;
+              }
+              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) {
+                border: 2px solid #0c4b2b;
+                border-radius: 999px;
+                padding: 10px 14px;
+                margin-bottom: 10px;
+                background: #f7f3e7;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                flex-wrap: nowrap;
+              }
+              @media (max-width: 768px) {
+                .picks-layout > div[data-testid="stHorizontalBlock"] {
+                  flex-direction: column !important;
+                }
+                div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) {
+                  flex-direction: row !important;
+                }
+              }
               .picks-row-marker {
                 display: none;
               }
@@ -1512,6 +1535,7 @@ def main():
         ).fetchall()
         week_map = {row["name"]: idx + 1 for idx, row in enumerate(tournament_order)}
 
+        st.markdown('<div class="picks-layout">', unsafe_allow_html=True)
         col_left, col_right = st.columns([2, 3])
 
         # pick current tournament if in progress, otherwise next upcoming
@@ -1648,6 +1672,8 @@ def main():
                 use_container_width=True,
                 hide_index=True,
             )
+
+        st.markdown("</div>", unsafe_allow_html=True)
 
         if is_admin(conn):
             st.markdown("#### Add Pick")
