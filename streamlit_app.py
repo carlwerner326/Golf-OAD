@@ -12,16 +12,17 @@ import requests
 from difflib import SequenceMatcher
 
 try:
-import gspread
+    import gspread
     from google.oauth2 import service_account
     from gspread.exceptions import APIError
-SHEETS_AVAILABLE = True
-SHEETS_LAST_ERROR = None
+    SHEETS_AVAILABLE = True
+    SHEETS_LAST_ERROR = None
 except ImportError:
     gspread = None
     service_account = None
     APIError = Exception
     SHEETS_AVAILABLE = False
+    SHEETS_LAST_ERROR = "gspread not installed"
 import streamlit as st
 
 BDL_BASE = "https://api.balldontlie.io/pga/v1"
