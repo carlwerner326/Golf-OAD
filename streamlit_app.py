@@ -452,7 +452,14 @@ def sync_picks_from_sheet(conn: sqlite3.Connection) -> bool:
     for row in rows:
         user = conn.execute("SELECT id FROM users WHERE name = ?", (row.get("user"),)).fetchone()
         tournament = conn.execute("SELECT id FROM tournaments WHERE name = ?", (row.get("tournament"),)).fetchone()
-        golfer = conn.execute("SELECT id FROM golfers WHERE name = ?", (row.get("golfer"),)).fetchone()
+        golfer_name = row.get("golfer")
+        golfer = conn.execute("SELECT id FROM golfers WHERE name = ?", (golfer_name,)).fetchone()
+        if golfer_name and not golfer:
+            conn.execute(
+                "INSERT OR IGNORE INTO golfers (name, active) VALUES (?, 1)",
+                (golfer_name,),
+            )
+            golfer = conn.execute("SELECT id FROM golfers WHERE name = ?", (golfer_name,)).fetchone()
         if not user or not tournament or not golfer:
             continue
         pending.append(
@@ -1826,8 +1833,35 @@ def main():
                                 persist_users(conn)
                     conn.commit()
                     persist_picks(conn)
-                    st.success("Pick saved.")
-                    st.rerun()
+                        st.success("Pick saved.")
+                        st.rerun()
+
+        st.markdown("#### Picks By Player")
+        users = conn.execute("SELECT id, name FROM users ORDER BY name").fetchall()
+        user_label = st.selectbox("Player", [u["name"] for u in users], key="picks_user_select")
+        user_id = next(u["id"] for u in users if u["name"] == user_label)
+        user_picks = conn.execute(
+            """
+            SELECT tournaments.name as tournament, golfers.name as golfer, tournaments.start_date, tournaments.end_date
+            FROM picks
+            JOIN tournaments ON tournaments.id = picks.tournament_id
+            JOIN golfers ON golfers.id = picks.golfer_id
+            WHERE picks.user_id = ?
+            ORDER BY tournaments.start_date
+            """,
+            (user_id,),
+        ).fetchall()
+        st.dataframe(
+            [
+                {
+                    "Tournament": f"{row['tournament']} ({format_short_date(row['start_date'])}–{format_short_date(row['end_date'])})",
+                    "Golfer": row["golfer"],
+                }
+                for row in user_picks
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
         # admin pick management moved to Admin tab
@@ -2056,31 +2090,8 @@ def main():
                         st.success("Picks deleted.")
                         st.rerun()
                 with col_pick_right:
-                    st.markdown("**Picks By Player (Admin)**")
-                    admin_user_label = st.selectbox("Player", [u["name"] for u in users], key="admin_picks_user_select")
-                    admin_user_id = next(u["id"] for u in users if u["name"] == admin_user_label)
-                    admin_user_picks = conn.execute(
-                        """
-                        SELECT tournaments.name as tournament, golfers.name as golfer, tournaments.start_date, tournaments.end_date
-                        FROM picks
-                        JOIN tournaments ON tournaments.id = picks.tournament_id
-                        JOIN golfers ON golfers.id = picks.golfer_id
-                        WHERE picks.user_id = ?
-                        ORDER BY tournaments.start_date
-                        """,
-                        (admin_user_id,),
-                    ).fetchall()
-                    st.dataframe(
-                        [
-                            {
-                                "Tournament": f"{row['tournament']} ({format_short_date(row['start_date'])}–{format_short_date(row['end_date'])})",
-                                "Golfer": row["golfer"],
-                            }
-                            for row in admin_user_picks
-                        ],
-                        use_container_width=True,
-                        hide_index=True,
-                    )
+                    st.markdown("**Admin Notes**")
+                    st.caption("Use this panel to edit picks for any player, even after lock.")
 
                 st.markdown("#### Results Entry")
             tournaments = conn.execute("SELECT id, name, start_date, end_date FROM tournaments ORDER BY start_date").fetchall()
