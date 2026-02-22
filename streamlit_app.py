@@ -1244,18 +1244,18 @@ def main():
                 gap: 14px;
               }
               .schedule-card {
-                border: 1px solid rgba(44, 77, 55, 0.6);
+                border: 2px solid #0c4b2b;
                 border-radius: 12px;
                 padding: 12px 16px;
-                background: rgba(9, 16, 20, 0.55);
+                background: #f7f3e7;
               }
               .schedule-name {
                 font-weight: 700;
-                color: #2f8f5b;
+                color: #0c4b2b;
                 letter-spacing: 0.02em;
               }
               .schedule-meta {
-                color: #2f8f5b;
+                color: #0c4b2b;
                 margin-top: 4px;
               }
               .schedule-tag {
