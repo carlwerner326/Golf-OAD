@@ -164,7 +164,7 @@ def get_picks_worksheet():
             worksheet = sheet.worksheet("picks")
         except gspread.WorksheetNotFound:
             worksheet = sheet.add_worksheet(title="picks", rows=200, cols=4)
-            worksheet.update("A1:D1", [["user", "tournament", "golfer", "created_at"]])
+            worksheet.update(values=[["user", "tournament", "golfer", "created_at"]], range_name="A1:D1")
         return worksheet
     except APIError:
         return None
@@ -181,7 +181,7 @@ def get_results_worksheet():
             worksheet = sheet.worksheet("results")
         except gspread.WorksheetNotFound:
             worksheet = sheet.add_worksheet(title="results", rows=500, cols=5)
-            worksheet.update("A1:E1", [["tournament", "golfer", "purse", "position", "updated_at"]])
+            worksheet.update(values=[["tournament", "golfer", "purse", "position", "updated_at"]], range_name="A1:E1")
         return worksheet
     except APIError:
         return None
@@ -197,7 +197,7 @@ def get_users_worksheet():
             worksheet = sheet.worksheet("users")
         except gspread.WorksheetNotFound:
             worksheet = sheet.add_worksheet(title="users", rows=200, cols=5)
-            worksheet.update("A1:E1", [["name", "pin_hash", "is_admin", "double_pick_used", "updated_at"]])
+            worksheet.update(values=[["name", "pin_hash", "is_admin", "double_pick_used", "updated_at"]], range_name="A1:E1")
         return worksheet
     except APIError:
         return None
@@ -530,7 +530,7 @@ def sync_results_to_sheet(conn: sqlite3.Connection) -> None:
         )
     try:
         worksheet.clear()
-        worksheet.update("A1", values)
+        worksheet.update(values=values, range_name="A1")
     except APIError:
         return
 
@@ -588,7 +588,7 @@ def sync_users_to_sheet(conn: sqlite3.Connection) -> None:
         )
     try:
         worksheet.clear()
-        worksheet.update("A1", values)
+        worksheet.update(values=values, range_name="A1")
     except APIError:
         return
 def sync_picks_to_sheet(conn: sqlite3.Connection) -> None:
@@ -613,7 +613,7 @@ def sync_picks_to_sheet(conn: sqlite3.Connection) -> None:
         values.append([row["user"], row["tournament"], row["golfer"], row["created_at"]])
     try:
         worksheet.clear()
-        worksheet.update("A1", values)
+        worksheet.update(values=values, range_name="A1")
     except APIError:
         return
 
@@ -1963,10 +1963,14 @@ def main():
                 st.warning("Admin access required.")
             else:
                 st.markdown("#### Storage Status")
-                if get_sheets_id():
-                    if get_picks_worksheet():
+                sheet_id = get_sheets_id()
+                if sheet_id:
+                    picks_ws = get_picks_worksheet()
+                    results_ws = get_results_worksheet()
+                    users_ws = get_users_worksheet()
+                    if picks_ws or results_ws or users_ws:
                         st.success("Google Sheets storage: connected.")
-                        sheet_url = f"https://docs.google.com/spreadsheets/d/{get_sheets_id()}/edit"
+                        sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
                         st.markdown(f"[Open Picks Sheet]({sheet_url})")
                     else:
                         st.warning("Google Sheets storage: configured but not connected.")
