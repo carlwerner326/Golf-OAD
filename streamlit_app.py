@@ -1135,8 +1135,8 @@ def login_gate(conn: sqlite3.Connection) -> None:
     user = next(u for u in users if u["name"] == user_name)
     pin = st.text_input("PIN (4–6 digits)", type="password", key="login_pin")
 
-    if user["pin_hash"] is None and user["is_admin"]:
-        st.info("Set your admin PIN to continue.")
+    if user["pin_hash"] is None:
+        st.info("Set your PIN to continue.")
         pin_confirm = st.text_input("Confirm PIN", type="password", key="login_pin_confirm")
         if st.button("Set PIN"):
             if pin != pin_confirm or not pin or len(pin) not in (4, 5, 6) or not pin.isdigit():
