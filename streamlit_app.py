@@ -1271,6 +1271,19 @@ def main():
                 margin-bottom: 10px;
                 background: #f7f3e7;
               }
+              .picks-row-marker {
+                display: none;
+              }
+              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) {
+                border: 2px solid #0c4b2b;
+                border-radius: 12px;
+                padding: 8px 12px;
+                margin-bottom: 10px;
+                background: #f7f3e7;
+              }
+              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) > div {
+                padding: 0 !important;
+              }
               .picks-user {
                 color: #0c4b2b;
                 font-weight: 700;
@@ -1453,9 +1466,11 @@ def main():
                 (selected_name,),
             ).fetchall()
             for row in tournament_picks:
-                st.markdown('<div class="picks-row">', unsafe_allow_html=True)
                 col_a, col_b, col_c = st.columns([3, 4, 1])
-                col_a.markdown(f"<span class='picks-user'>{row['user']}</span>", unsafe_allow_html=True)
+                col_a.markdown(
+                    f"<span class='picks-row-marker'></span><span class='picks-user'>{row['user']}</span>",
+                    unsafe_allow_html=True,
+                )
                 col_b.markdown(
                     f"<span class='picks-golfer'>{(row['golfer_list'] or '').replace(chr(10), '<br/>')}</span>",
                     unsafe_allow_html=True,
@@ -1469,7 +1484,6 @@ def main():
                     if menu_clicked:
                         st.session_state["delete_user"] = row["user"]
                         st.session_state["delete_tourn"] = selected_name
-                st.markdown("</div>", unsafe_allow_html=True)
 
         with col_right:
             st.markdown("#### Picks By Player")
