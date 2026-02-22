@@ -1368,6 +1368,8 @@ def main():
                 align-items: center;
                 gap: 12px;
                 flex-wrap: nowrap;
+                max-width: 100%;
+                overflow: hidden;
               }
               div[data-testid="stHorizontalBlock"]:has(div[data-testid="stHorizontalBlock"]) {
                 background: transparent !important;
@@ -1393,6 +1395,8 @@ def main():
               }
               div[data-testid="stHorizontalBlock"]:has(.picks-row-marker):not(:has(div[data-testid="stHorizontalBlock"])) > div {
                 padding: 0 !important;
+                min-width: 0 !important;
+                flex: 1 1 0;
               }
               .picks-user {
                 color: #0c4b2b;
@@ -1419,10 +1423,13 @@ def main():
                 div[data-testid="stHorizontalBlock"]:has(.picks-row-marker):not(:has(div[data-testid="stHorizontalBlock"])) {
                   gap: 8px;
                   padding: 8px 12px;
+                  flex-wrap: wrap;
                 }
                 div[data-testid="stHorizontalBlock"]:has(.picks-row-marker):not(:has(div[data-testid="stHorizontalBlock"])) .picks-golfer {
                   white-space: normal;
                   text-align: left;
+                  overflow-wrap: anywhere;
+                  word-break: break-word;
                 }
               }
             </style>
