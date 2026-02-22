@@ -1541,238 +1541,204 @@ def main():
         ).fetchall()
         week_map = {row["name"]: idx + 1 for idx, row in enumerate(tournament_order)}
 
-        col_left, col_right = st.columns([2, 3])
         # pick current tournament if in progress, otherwise next upcoming
         next_index = get_current_or_next_tournament_index(tournament_order)
 
-        with col_left:
-            st.markdown("#### Picks By Tournament")
-            tournament_options = []
-            tournament_label_map = {}
-            for row in tournament_order:
-                label = (
-                    f"Week {week_map.get(row['name'], '—')} — {row['name']} "
-                    f"({format_short_date(row['start_date'])}–{format_short_date(row['end_date'])})"
-                )
-                tournament_options.append(label)
-                tournament_label_map[label] = row["name"]
-            default_label = tournament_options[next_index] if tournament_options else ""
-            if "picks_tournament_select" not in st.session_state:
-                st.session_state["picks_tournament_select"] = default_label
-            tournament_label = st.selectbox(
-                "Tournament",
-                tournament_options,
-                key="picks_tournament_select",
+        st.markdown("#### Picks By Tournament")
+        tournament_options = []
+        tournament_label_map = {}
+        for row in tournament_order:
+            label = (
+                f"Week {week_map.get(row['name'], '—')} — {row['name']} "
+                f"({format_short_date(row['start_date'])}–{format_short_date(row['end_date'])})"
             )
-            selected_name = tournament_label_map.get(
-                tournament_label,
-                tournament_order[next_index]["name"] if tournament_order else "",
-            )
-            selected_tournament_row = next(
-                (row for row in tournament_order if row["name"] == selected_name),
-                None,
-            )
-            now_et = datetime.now(ZoneInfo("America/New_York"))
-            reveal_time = (
-                get_reveal_time(selected_tournament_row["start_date"])
-                if selected_tournament_row
-                else now_et
-            )
-            pending_delete_user = st.session_state.get("delete_user")
-            pending_delete_tourn = st.session_state.get("delete_tourn")
-            if pending_delete_user and pending_delete_tourn:
-                pick_row = conn.execute(
-                    "SELECT users.name as user, GROUP_CONCAT(golfers.name, ', ') as golfers\n"
-                    "FROM picks\n"
-                    "JOIN users ON users.id = picks.user_id\n"
-                    "JOIN golfers ON golfers.id = picks.golfer_id\n"
-                    "JOIN tournaments ON tournaments.id = picks.tournament_id\n"
-                    "WHERE users.name = ? AND tournaments.name = ?\n"
-                    "GROUP BY users.name",
-                    (pending_delete_user, pending_delete_tourn),
-                ).fetchone()
-                if pick_row:
-                    st.warning(
-                        f"Delete picks for {pick_row['user']} → {pick_row['golfers']}?"
-                    )
-                    col_confirm, col_cancel = st.columns([1, 1])
-                    if col_confirm.button("Yes, delete", key="confirm_delete_pick", type="primary"):
-                        conn.execute(
-                            "DELETE FROM picks WHERE user_id = (SELECT id FROM users WHERE name = ?) "
-                            "AND tournament_id = (SELECT id FROM tournaments WHERE name = ?)",
-                            (pending_delete_user, pending_delete_tourn),
-                        )
-                        conn.commit()
-                        persist_picks(conn)
-                        st.session_state["delete_user"] = None
-                        st.session_state["delete_tourn"] = None
-                        st.success("Picks deleted.")
-                    if col_cancel.button("Cancel", key="cancel_delete_pick", type="primary"):
-                        st.session_state["delete_user"] = None
-                        st.session_state["delete_tourn"] = None
-            tournament_picks = conn.execute(
-                """
-                SELECT users.name as user,
-                       GROUP_CONCAT(golfers.name, '\n') as golfer_list
-                FROM picks
-                JOIN users ON users.id = picks.user_id
-                JOIN golfers ON golfers.id = picks.golfer_id
-                JOIN tournaments ON tournaments.id = picks.tournament_id
-                WHERE tournaments.name = ?
-                GROUP BY users.name
-                ORDER BY users.name
-                """,
-                (selected_name,),
-            ).fetchall()
-            for row in tournament_picks:
-                show_locked = (
-                    not admin_view
-                    and row["user"] != current_user_name
-                    and now_et < reveal_time
+            tournament_options.append(label)
+            tournament_label_map[label] = row["name"]
+        default_label = tournament_options[next_index] if tournament_options else ""
+        if "picks_tournament_select" not in st.session_state:
+            st.session_state["picks_tournament_select"] = default_label
+        tournament_label = st.selectbox(
+            "Tournament",
+            tournament_options,
+            key="picks_tournament_select",
+        )
+        selected_name = tournament_label_map.get(
+            tournament_label,
+            tournament_order[next_index]["name"] if tournament_order else "",
+        )
+        selected_tournament_row = next(
+            (row for row in tournament_order if row["name"] == selected_name),
+            None,
+        )
+        now_et = datetime.now(ZoneInfo("America/New_York"))
+        reveal_time = (
+            get_reveal_time(selected_tournament_row["start_date"])
+            if selected_tournament_row
+            else now_et
+        )
+        pending_delete_user = st.session_state.get("delete_user")
+        pending_delete_tourn = st.session_state.get("delete_tourn")
+        if pending_delete_user and pending_delete_tourn:
+            pick_row = conn.execute(
+                "SELECT users.name as user, GROUP_CONCAT(golfers.name, ', ') as golfers\n"
+                "FROM picks\n"
+                "JOIN users ON users.id = picks.user_id\n"
+                "JOIN golfers ON golfers.id = picks.golfer_id\n"
+                "JOIN tournaments ON tournaments.id = picks.tournament_id\n"
+                "WHERE users.name = ? AND tournaments.name = ?\n"
+                "GROUP BY users.name",
+                (pending_delete_user, pending_delete_tourn),
+            ).fetchone()
+            if pick_row:
+                st.warning(
+                    f"Delete picks for {pick_row['user']} → {pick_row['golfers']}?"
                 )
-                golfer_text = "🔒 Locked" if show_locked else (row["golfer_list"] or "").replace("\n", " / ")
-                can_manage = admin_view or (
-                    row["user"] == current_user_name and now_et < reveal_time
-                )
-                row_key = f"menu_pick_{row['user']}"
-                col_a, col_b, col_c = st.columns([2, 4, 1])
-                col_a.markdown(
-                    f"<span class='picks-row-marker'></span><span class='picks-user'>{row['user']}</span>",
-                    unsafe_allow_html=True,
-                )
-                col_b.markdown(
-                    f"<span class='picks-golfer'>{golfer_text}</span>",
-                    unsafe_allow_html=True,
-                )
-                with col_c:
-                    if can_manage and st.button("...", key=row_key, type="secondary"):
-                        st.session_state["delete_user"] = row["user"]
-                        st.session_state["delete_tourn"] = selected_name
-
-        with col_right:
-            st.markdown("#### Picks By Player")
-            users = conn.execute("SELECT id, name FROM users ORDER BY name").fetchall()
-            user_label = st.selectbox("Player", [u["name"] for u in users], key="picks_user_select")
-            user_id = next(u["id"] for u in users if u["name"] == user_label)
-            user_picks = conn.execute(
-                """
-                SELECT tournaments.name as tournament, golfers.name as golfer, tournaments.start_date, tournaments.end_date
-                FROM picks
-                JOIN tournaments ON tournaments.id = picks.tournament_id
-                JOIN golfers ON golfers.id = picks.golfer_id
-                WHERE picks.user_id = ?
-                ORDER BY tournaments.start_date
-                """,
-                (user_id,),
-            ).fetchall()
-            st.dataframe(
-                [
-                    {
-                        "Tournament": f"{row['tournament']} ({format_short_date(row['start_date'])}–{format_short_date(row['end_date'])})",
-                        "Golfer": row["golfer"],
-                    }
-                    for row in user_picks
-                ],
-                use_container_width=True,
-                hide_index=True,
-            )
-
-
-        if is_admin(conn):
-            st.markdown("#### Add Pick")
-            users = conn.execute("SELECT id, name FROM users ORDER BY name").fetchall()
-            tournaments = conn.execute(
-                "SELECT id, name, start_date, end_date, is_major FROM tournaments ORDER BY start_date"
-            ).fetchall()
-            golfers = conn.execute(
-                "SELECT id, name, fedex_rank FROM golfers WHERE active = 1 ORDER BY fedex_rank IS NULL, fedex_rank, name"
-            ).fetchall()
-            today_str = date.today().isoformat()
-            next_index = 0
-            for idx, t in enumerate(tournaments):
-                if t["start_date"] >= today_str:
-                    next_index = idx
-                    break
-
-            user_name = st.selectbox("User", [u["name"] for u in users])
-            tournament_name = st.selectbox(
-                "Tournament",
-                [f"{t['name']} ({format_short_date(t['start_date'])}–{format_short_date(t['end_date'])})" for t in tournaments],
-                index=next_index,
-                key="admin_pick_tournament",
-            )
-            golfer_name = st.selectbox("Golfer", [g["name"] for g in golfers])
-            selected_tournament = tournaments[
-                [f"{t['name']} ({format_short_date(t['start_date'])}–{format_short_date(t['end_date'])})" for t in tournaments].index(tournament_name)
-            ]
-            is_major = bool(selected_tournament["is_major"])
-            st.caption("Major event" if is_major else "Regular event")
-            use_double_pick = False
-            if not is_major:
-                use_double_pick = st.checkbox("Use season double-pick (non-major)")
-            second_golfer_name = None
-            if is_major or use_double_pick:
-                second_golfer_name = st.selectbox(
-                    "Second Golfer",
-                    [g["name"] for g in golfers],
-                    key="second_golfer",
-                )
-
-            if st.button("Save Pick", type="primary"):
-                user_id = next(u["id"] for u in users if u["name"] == user_name)
-                tournament_id = selected_tournament["id"]
-                golfer_id = next(g["id"] for g in golfers if g["name"] == golfer_name)
-                second_golfer_id = None
-                if second_golfer_name:
-                    second_golfer_id = next(g["id"] for g in golfers if g["name"] == second_golfer_name)
-
-                existing = conn.execute(
-                    "SELECT COUNT(*) FROM picks WHERE user_id = ? AND tournament_id = ?",
-                    (user_id, tournament_id),
-                ).fetchone()[0]
-                used = conn.execute(
-                    "SELECT 1 FROM picks WHERE user_id = ? AND golfer_id = ?",
-                    (user_id, golfer_id),
-                ).fetchone()
-                if is_major and existing >= 2:
-                    st.error("User already has two picks for this major.")
-                elif not is_major and existing >= 1 and not use_double_pick:
-                    st.error("User already has a pick for this tournament.")
-                elif not is_major and existing >= 2:
-                    st.error("User already used the double pick here.")
-                elif used:
-                    st.error("User already used this golfer.")
-                elif second_golfer_id and conn.execute(
-                    "SELECT 1 FROM picks WHERE user_id = ? AND golfer_id = ?",
-                    (user_id, second_golfer_id),
-                ).fetchone():
-                    st.error("User already used the second golfer.")
-                elif second_golfer_id and second_golfer_id == golfer_id:
-                    st.error("Choose two different golfers.")
-                elif use_double_pick and conn.execute(
-                    "SELECT double_pick_used FROM users WHERE id = ?",
-                    (user_id,),
-                ).fetchone()[0] == 1:
-                    st.error("User already used the season double-pick.")
-                else:
+                col_confirm, col_cancel = st.columns([1, 1])
+                if col_confirm.button("Yes, delete", key="confirm_delete_pick", type="primary"):
                     conn.execute(
-                        "INSERT INTO picks (user_id, tournament_id, golfer_id, created_at) VALUES (?, ?, ?, ?)",
-                        (user_id, tournament_id, golfer_id, datetime.utcnow().isoformat()),
+                        "DELETE FROM picks WHERE user_id = (SELECT id FROM users WHERE name = ?) "
+                        "AND tournament_id = (SELECT id FROM tournaments WHERE name = ?)",
+                        (pending_delete_user, pending_delete_tourn),
                     )
-                    if second_golfer_id:
-                        conn.execute(
-                            "INSERT INTO picks (user_id, tournament_id, golfer_id, created_at) VALUES (?, ?, ?, ?)",
-                            (user_id, tournament_id, second_golfer_id, datetime.utcnow().isoformat()),
-                        )
-                        if not is_major and use_double_pick:
-                            conn.execute(
-                                "UPDATE users SET double_pick_used = 1 WHERE id = ?",
-                                (user_id,),
-                            )
                     conn.commit()
                     persist_picks(conn)
-                    st.success("Pick saved.")
-                    st.rerun()
+                    st.session_state["delete_user"] = None
+                    st.session_state["delete_tourn"] = None
+                    st.success("Picks deleted.")
+                if col_cancel.button("Cancel", key="cancel_delete_pick", type="primary"):
+                    st.session_state["delete_user"] = None
+                    st.session_state["delete_tourn"] = None
+        tournament_picks = conn.execute(
+            """
+            SELECT users.name as user,
+                   GROUP_CONCAT(golfers.name, '\n') as golfer_list
+            FROM picks
+            JOIN users ON users.id = picks.user_id
+            JOIN golfers ON golfers.id = picks.golfer_id
+            JOIN tournaments ON tournaments.id = picks.tournament_id
+            WHERE tournaments.name = ?
+            GROUP BY users.name
+            ORDER BY users.name
+            """,
+            (selected_name,),
+        ).fetchall()
+        for row in tournament_picks:
+            show_locked = (
+                not admin_view
+                and row["user"] != current_user_name
+                and now_et < reveal_time
+            )
+            golfer_text = "🔒 Locked" if show_locked else (row["golfer_list"] or "").replace("\n", " / ")
+            can_manage = admin_view or (
+                row["user"] == current_user_name and now_et < reveal_time
+            )
+            row_key = f"menu_pick_{row['user']}"
+            col_a, col_b, col_c = st.columns([2, 4, 1])
+            col_a.markdown(
+                f"<span class='picks-row-marker'></span><span class='picks-user'>{row['user']}</span>",
+                unsafe_allow_html=True,
+            )
+            col_b.markdown(
+                f"<span class='picks-golfer'>{golfer_text}</span>",
+                unsafe_allow_html=True,
+            )
+            with col_c:
+                if can_manage and st.button("...", key=row_key, type="secondary"):
+                    st.session_state["delete_user"] = row["user"]
+                    st.session_state["delete_tourn"] = selected_name
+
+        st.markdown("#### Make Your Pick")
+        if not current_user:
+            st.info("Log in to make your pick.")
+        else:
+            user_id = current_user["id"]
+            upcoming = [t for t in tournament_order if t["end_date"] >= date.today().isoformat()]
+            if not upcoming:
+                st.info("No upcoming tournaments.")
+            else:
+                pick_default_idx = get_current_or_next_tournament_index(upcoming)
+                pick_tournament_label = st.selectbox(
+                    "Tournament",
+                    [f"{t['name']} ({format_short_date(t['start_date'])}–{format_short_date(t['end_date'])})" for t in upcoming],
+                    index=pick_default_idx,
+                    key="user_pick_tournament",
+                )
+                selected_pick = upcoming[
+                    [f"{t['name']} ({format_short_date(t['start_date'])}–{format_short_date(t['end_date'])})" for t in upcoming].index(pick_tournament_label)
+                ]
+                pick_is_major = bool(selected_pick["is_major"])
+                pick_reveal_time = get_reveal_time(selected_pick["start_date"])
+                if now_et >= pick_reveal_time:
+                    st.warning("Picks are locked for this tournament.")
+                golfers = conn.execute(
+                    "SELECT id, name FROM golfers WHERE active = 1 ORDER BY name"
+                ).fetchall()
+                golfer_name = st.selectbox("Golfer", [g["name"] for g in golfers], key="user_pick_golfer")
+                second_golfer_name = None
+                use_double_pick = False
+                if pick_is_major:
+                    second_golfer_name = st.selectbox(
+                        "Second Golfer",
+                        [g["name"] for g in golfers],
+                        key="user_pick_second",
+                    )
+                else:
+                    use_double_pick = st.checkbox("Use season double-pick (non-major)", key="user_double_pick")
+                    if use_double_pick:
+                        second_golfer_name = st.selectbox(
+                            "Second Golfer",
+                            [g["name"] for g in golfers],
+                            key="user_pick_second",
+                        )
+                if st.button("Save My Pick", type="primary", disabled=now_et >= pick_reveal_time):
+                    golfer_id = next(g["id"] for g in golfers if g["name"] == golfer_name)
+                    second_golfer_id = None
+                    if second_golfer_name:
+                        second_golfer_id = next(g["id"] for g in golfers if g["name"] == second_golfer_name)
+                    used = conn.execute(
+                        "SELECT 1 FROM picks WHERE user_id = ? AND golfer_id = ?",
+                        (user_id, golfer_id),
+                    ).fetchone()
+                    if used:
+                        st.error("You already used this golfer.")
+                    elif second_golfer_id and conn.execute(
+                        "SELECT 1 FROM picks WHERE user_id = ? AND golfer_id = ?",
+                        (user_id, second_golfer_id),
+                    ).fetchone():
+                        st.error("You already used the second golfer.")
+                    elif second_golfer_id and second_golfer_id == golfer_id:
+                        st.error("Choose two different golfers.")
+                    elif use_double_pick and conn.execute(
+                        "SELECT double_pick_used FROM users WHERE id = ?",
+                        (user_id,),
+                    ).fetchone()[0] == 1:
+                        st.error("You already used the season double-pick.")
+                    else:
+                        conn.execute(
+                            "DELETE FROM picks WHERE user_id = ? AND tournament_id = ?",
+                            (user_id, selected_pick["id"]),
+                        )
+                        conn.execute(
+                            "INSERT INTO picks (user_id, tournament_id, golfer_id, created_at) VALUES (?, ?, ?, ?)",
+                            (user_id, selected_pick["id"], golfer_id, datetime.utcnow().isoformat()),
+                        )
+                        if second_golfer_id:
+                            conn.execute(
+                                "INSERT INTO picks (user_id, tournament_id, golfer_id, created_at) VALUES (?, ?, ?, ?)",
+                                (user_id, selected_pick["id"], second_golfer_id, datetime.utcnow().isoformat()),
+                            )
+                            if not pick_is_major and use_double_pick:
+                                conn.execute(
+                                    "UPDATE users SET double_pick_used = 1 WHERE id = ?",
+                                    (user_id,),
+                                )
+                        conn.commit()
+                        persist_picks(conn)
+                        st.success("Pick saved.")
+                        st.rerun()
+
+
+        # admin pick management moved to Admin tab
 
     with tab_tournaments:
         today_str = date.today().isoformat()
@@ -1897,6 +1863,131 @@ def main():
                         st.success("RapidAPI connection OK.")
                     except Exception as exc:
                         st.error(f"RapidAPI test failed: {exc}")
+
+                st.markdown("#### Pick Management")
+                users = conn.execute("SELECT id, name FROM users ORDER BY name").fetchall()
+                tournaments = conn.execute(
+                    "SELECT id, name, start_date, end_date, is_major FROM tournaments ORDER BY start_date"
+                ).fetchall()
+                golfers = conn.execute(
+                    "SELECT id, name FROM golfers WHERE active = 1 ORDER BY name"
+                ).fetchall()
+                admin_next_idx = get_current_or_next_tournament_index(tournaments)
+                col_pick_left, col_pick_right = st.columns([2, 3])
+                with col_pick_left:
+                    user_name = st.selectbox("User", [u["name"] for u in users], key="admin_pick_user")
+                    tournament_name = st.selectbox(
+                        "Tournament",
+                        [f"{t['name']} ({format_short_date(t['start_date'])}–{format_short_date(t['end_date'])})" for t in tournaments],
+                        index=admin_next_idx,
+                        key="admin_pick_tournament",
+                    )
+                    golfer_name = st.selectbox("Golfer", [g["name"] for g in golfers], key="admin_pick_golfer")
+                    selected_tournament = tournaments[
+                        [f"{t['name']} ({format_short_date(t['start_date'])}–{format_short_date(t['end_date'])})" for t in tournaments].index(tournament_name)
+                    ]
+                    is_major = bool(selected_tournament["is_major"])
+                    st.caption("Major event" if is_major else "Regular event")
+                    use_double_pick = False
+                    if not is_major:
+                        use_double_pick = st.checkbox("Use season double-pick (non-major)", key="admin_use_double")
+                    second_golfer_name = None
+                    if is_major or use_double_pick:
+                        second_golfer_name = st.selectbox(
+                            "Second Golfer",
+                            [g["name"] for g in golfers],
+                            key="admin_pick_second",
+                        )
+                    replace_existing = st.checkbox(
+                        "Replace existing picks for this tournament",
+                        value=True,
+                        key="admin_replace_existing",
+                    )
+                    if st.button("Save Pick (Admin)", type="primary"):
+                        user_id = next(u["id"] for u in users if u["name"] == user_name)
+                        tournament_id = selected_tournament["id"]
+                        golfer_id = next(g["id"] for g in golfers if g["name"] == golfer_name)
+                        second_golfer_id = None
+                        if second_golfer_name:
+                            second_golfer_id = next(g["id"] for g in golfers if g["name"] == second_golfer_name)
+                        if replace_existing:
+                            conn.execute(
+                                "DELETE FROM picks WHERE user_id = ? AND tournament_id = ?",
+                                (user_id, tournament_id),
+                            )
+                        if conn.execute(
+                            "SELECT 1 FROM picks WHERE user_id = ? AND golfer_id = ?",
+                            (user_id, golfer_id),
+                        ).fetchone():
+                            st.error("User already used this golfer.")
+                        elif second_golfer_id and conn.execute(
+                            "SELECT 1 FROM picks WHERE user_id = ? AND golfer_id = ?",
+                            (user_id, second_golfer_id),
+                        ).fetchone():
+                            st.error("User already used the second golfer.")
+                        elif second_golfer_id and second_golfer_id == golfer_id:
+                            st.error("Choose two different golfers.")
+                        elif use_double_pick and conn.execute(
+                            "SELECT double_pick_used FROM users WHERE id = ?",
+                            (user_id,),
+                        ).fetchone()[0] == 1:
+                            st.error("User already used the season double-pick.")
+                        else:
+                            conn.execute(
+                                "INSERT INTO picks (user_id, tournament_id, golfer_id, created_at) VALUES (?, ?, ?, ?)",
+                                (user_id, tournament_id, golfer_id, datetime.utcnow().isoformat()),
+                            )
+                            if second_golfer_id:
+                                conn.execute(
+                                    "INSERT INTO picks (user_id, tournament_id, golfer_id, created_at) VALUES (?, ?, ?, ?)",
+                                    (user_id, tournament_id, second_golfer_id, datetime.utcnow().isoformat()),
+                                )
+                                if not is_major and use_double_pick:
+                                    conn.execute(
+                                        "UPDATE users SET double_pick_used = 1 WHERE id = ?",
+                                        (user_id,),
+                                    )
+                            conn.commit()
+                            persist_picks(conn)
+                            st.success("Pick saved.")
+                            st.rerun()
+                    if st.button("Delete Picks (Admin)", key="admin_delete_picks", type="secondary"):
+                        user_id = next(u["id"] for u in users if u["name"] == user_name)
+                        tournament_id = selected_tournament["id"]
+                        conn.execute(
+                            "DELETE FROM picks WHERE user_id = ? AND tournament_id = ?",
+                            (user_id, tournament_id),
+                        )
+                        conn.commit()
+                        persist_picks(conn)
+                        st.success("Picks deleted.")
+                        st.rerun()
+                with col_pick_right:
+                    st.markdown("**Picks By Player (Admin)**")
+                    admin_user_label = st.selectbox("Player", [u["name"] for u in users], key="admin_picks_user_select")
+                    admin_user_id = next(u["id"] for u in users if u["name"] == admin_user_label)
+                    admin_user_picks = conn.execute(
+                        """
+                        SELECT tournaments.name as tournament, golfers.name as golfer, tournaments.start_date, tournaments.end_date
+                        FROM picks
+                        JOIN tournaments ON tournaments.id = picks.tournament_id
+                        JOIN golfers ON golfers.id = picks.golfer_id
+                        WHERE picks.user_id = ?
+                        ORDER BY tournaments.start_date
+                        """,
+                        (admin_user_id,),
+                    ).fetchall()
+                    st.dataframe(
+                        [
+                            {
+                                "Tournament": f"{row['tournament']} ({format_short_date(row['start_date'])}–{format_short_date(row['end_date'])})",
+                                "Golfer": row["golfer"],
+                            }
+                            for row in admin_user_picks
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
 
                 st.markdown("#### Results Entry")
             tournaments = conn.execute("SELECT id, name, start_date, end_date FROM tournaments ORDER BY start_date").fetchall()
