@@ -1238,6 +1238,32 @@ def main():
                 gap: 8px;
                 align-items: center;
               }
+              .schedule-list {
+                display: flex;
+                flex-direction: column;
+                gap: 14px;
+              }
+              .schedule-card {
+                border: 1px solid rgba(44, 77, 55, 0.6);
+                border-radius: 12px;
+                padding: 12px 16px;
+                background: rgba(9, 16, 20, 0.55);
+              }
+              .schedule-name {
+                font-weight: 700;
+                color: #2f8f5b;
+                letter-spacing: 0.02em;
+              }
+              .schedule-meta {
+                color: #2f8f5b;
+                margin-top: 4px;
+              }
+              .schedule-tag {
+                display: inline-block;
+                margin-left: 8px;
+                font-weight: 700;
+                color: #f0c84b;
+              }
             </style>
             """
         ),
@@ -1557,23 +1583,24 @@ def main():
             "FROM tournaments WHERE end_date >= ? ORDER BY start_date",
             (today_str,),
         ).fetchall()
-        st.dataframe(
-            [
-                {
-                    "Tournament": row["name"],
-                    "Dates": f"{format_short_date(row['start_date'])} to {format_short_date(row['end_date'])}",
-                    "Type": "MAJOR"
-                    if row["is_major"]
-                    else "SIGNATURE"
-                    if row["is_signature"]
-                    else "",
-                    "Purse": format_money(row["purse"]) if row["purse"] else "—",
-                }
-                for row in tournaments
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
+        cards = []
+        for row in tournaments:
+            tag = ""
+            if row["is_major"]:
+                tag = "M"
+            elif row["is_signature"]:
+                tag = "S"
+            tag_html = f'<span class="schedule-tag">({tag})</span>' if tag else ""
+            cards.append(
+                f"""
+                <div class="schedule-card">
+                  <div class="schedule-name">{row['name']}{tag_html}</div>
+                  <div class="schedule-meta">{format_short_date(row['start_date'])} to {format_short_date(row['end_date'])}</div>
+                  <div class="schedule-meta">{format_money(row['purse']) if row['purse'] else '—'}</div>
+                </div>
+                """
+            )
+        st.markdown(f"<div class=\"schedule-list\">{''.join(cards)}</div>", unsafe_allow_html=True)
 
     with tab_players:
         st.subheader("Player Roster")
