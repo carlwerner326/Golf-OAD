@@ -2035,11 +2035,11 @@ def main():
                                     (user_id, tournament_id, second_golfer_id, datetime.utcnow().isoformat()),
                                 )
                                 if not is_major and use_double_pick:
-                                conn.execute(
-                                    "UPDATE users SET double_pick_used = 1 WHERE id = ?",
-                                    (user_id,),
-                                )
-                                persist_users(conn)
+                                    conn.execute(
+                                        "UPDATE users SET double_pick_used = 1 WHERE id = ?",
+                                        (user_id,),
+                                    )
+                                    persist_users(conn)
                             conn.commit()
                             persist_picks(conn)
                             st.success("Pick saved.")
