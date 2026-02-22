@@ -1833,8 +1833,8 @@ def main():
                                 persist_users(conn)
                     conn.commit()
                     persist_picks(conn)
-                        st.success("Pick saved.")
-                        st.rerun()
+                    st.success("Pick saved.")
+                    st.rerun()
 
         st.markdown("#### Picks By Player")
         users = conn.execute("SELECT id, name FROM users ORDER BY name").fetchall()
