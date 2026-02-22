@@ -1264,6 +1264,21 @@ def main():
                 font-weight: 700;
                 color: #f0c84b;
               }
+              .picks-row {
+                border: 2px solid #0c4b2b;
+                border-radius: 12px;
+                padding: 8px 12px;
+                margin-bottom: 10px;
+                background: #f7f3e7;
+              }
+              .picks-user {
+                color: #0c4b2b;
+                font-weight: 700;
+              }
+              .picks-golfer {
+                color: #f0c84b;
+                font-weight: 700;
+              }
             </style>
             """
         ),
@@ -1438,9 +1453,13 @@ def main():
                 (selected_name,),
             ).fetchall()
             for row in tournament_picks:
-                col_a, col_b, col_c = st.columns([3, 3, 1])
-                col_a.write(row["user"])
-                col_b.write((row["golfer_list"] or "").replace("\n", "<br/>"), unsafe_allow_html=True)
+                st.markdown('<div class="picks-row">', unsafe_allow_html=True)
+                col_a, col_b, col_c = st.columns([3, 4, 1])
+                col_a.markdown(f"<span class='picks-user'>{row['user']}</span>", unsafe_allow_html=True)
+                col_b.markdown(
+                    f"<span class='picks-golfer'>{(row['golfer_list'] or '').replace(chr(10), '<br/>')}</span>",
+                    unsafe_allow_html=True,
+                )
                 with col_c:
                     menu_clicked = st.button(
                         "...",
@@ -1450,6 +1469,7 @@ def main():
                     if menu_clicked:
                         st.session_state["delete_user"] = row["user"]
                         st.session_state["delete_tourn"] = selected_name
+                st.markdown("</div>", unsafe_allow_html=True)
 
         with col_right:
             st.markdown("#### Picks By Player")
