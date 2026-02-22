@@ -12,10 +12,11 @@ import requests
 from difflib import SequenceMatcher
 
 try:
-    import gspread
+import gspread
     from google.oauth2 import service_account
     from gspread.exceptions import APIError
-    SHEETS_AVAILABLE = True
+SHEETS_AVAILABLE = True
+SHEETS_LAST_ERROR = None
 except ImportError:
     gspread = None
     service_account = None
@@ -132,6 +133,7 @@ def get_sheets_scopes() -> list:
     return ["https://www.googleapis.com/auth/spreadsheets"]
 
 def get_sheets_client():
+    global SHEETS_LAST_ERROR
     if not SHEETS_AVAILABLE:
         return None
     sheet_id = get_sheets_id()
@@ -150,10 +152,15 @@ def get_sheets_client():
             info = json.load(handle)
     if not info:
         return None
-    creds = service_account.Credentials.from_service_account_info(info, scopes=get_sheets_scopes())
-    return gspread.authorize(creds)
+    try:
+        creds = service_account.Credentials.from_service_account_info(info, scopes=get_sheets_scopes())
+        return gspread.authorize(creds)
+    except Exception as exc:
+        SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
+        return None
 
 def get_picks_worksheet():
+    global SHEETS_LAST_ERROR
     client = get_sheets_client()
     sheet_id = get_sheets_id()
     if not client or not sheet_id:
@@ -166,11 +173,13 @@ def get_picks_worksheet():
             worksheet = sheet.add_worksheet(title="picks", rows=200, cols=4)
             worksheet.update(values=[["user", "tournament", "golfer", "created_at"]], range_name="A1:D1")
         return worksheet
-    except APIError:
+    except APIError as exc:
+        SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
         return None
 
 
 def get_results_worksheet():
+    global SHEETS_LAST_ERROR
     client = get_sheets_client()
     sheet_id = get_sheets_id()
     if not client or not sheet_id:
@@ -183,10 +192,12 @@ def get_results_worksheet():
             worksheet = sheet.add_worksheet(title="results", rows=500, cols=5)
             worksheet.update(values=[["tournament", "golfer", "purse", "position", "updated_at"]], range_name="A1:E1")
         return worksheet
-    except APIError:
+    except APIError as exc:
+        SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
         return None
 
 def get_users_worksheet():
+    global SHEETS_LAST_ERROR
     client = get_sheets_client()
     sheet_id = get_sheets_id()
     if not client or not sheet_id:
@@ -199,7 +210,8 @@ def get_users_worksheet():
             worksheet = sheet.add_worksheet(title="users", rows=200, cols=5)
             worksheet.update(values=[["name", "pin_hash", "is_admin", "double_pick_used", "updated_at"]], range_name="A1:E1")
         return worksheet
-    except APIError:
+    except APIError as exc:
+        SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
         return None
 
 def load_env_file(path: str = ".env") -> None:
@@ -1974,6 +1986,8 @@ def main():
                         st.markdown(f"[Open Picks Sheet]({sheet_url})")
                     else:
                         st.warning("Google Sheets storage: configured but not connected.")
+                        if SHEETS_LAST_ERROR:
+                            st.caption(f"Sheets error: {SHEETS_LAST_ERROR}")
                 else:
                     st.info("Google Sheets storage: not configured. Using local backup.")
 
