@@ -1406,17 +1406,24 @@ def main():
                 overflow: hidden;
                 text-overflow: ellipsis;
               }
+              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker):not(:has(div[data-testid="stHorizontalBlock"])) .picks-golfer {
+                flex: 1 1 auto;
+                min-width: 0;
+                text-align: right;
+              }
               .picks-menu {
                 color: #0c4b2b;
                 font-weight: 700;
               }
-              .picks-user {
-                color: #0c4b2b;
-                font-weight: 700;
-              }
-              .picks-golfer {
-                color: #f0c84b;
-                font-weight: 700;
+              @media (max-width: 600px) {
+                div[data-testid="stHorizontalBlock"]:has(.picks-row-marker):not(:has(div[data-testid="stHorizontalBlock"])) {
+                  gap: 8px;
+                  padding: 8px 12px;
+                }
+                div[data-testid="stHorizontalBlock"]:has(.picks-row-marker):not(:has(div[data-testid="stHorizontalBlock"])) .picks-golfer {
+                  white-space: normal;
+                  text-align: left;
+                }
               }
             </style>
             """
