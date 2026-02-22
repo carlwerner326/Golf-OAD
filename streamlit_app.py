@@ -1266,23 +1266,47 @@ def main():
               }
               .picks-row {
                 border: 2px solid #0c4b2b;
-                border-radius: 12px;
-                padding: 8px 12px;
+                border-radius: 999px;
+                padding: 10px 14px;
                 margin-bottom: 10px;
                 background: #f7f3e7;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                justify-content: space-between;
               }
-              .picks-row-marker {
-                display: none;
+              .picks-row-left {
+                display: flex;
+                align-items: center;
+                gap: 16px;
+                flex: 1;
+                min-width: 0;
               }
-              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) {
-                border: 2px solid #0c4b2b;
-                border-radius: 12px;
-                padding: 8px 12px;
-                margin-bottom: 10px;
-                background: #f7f3e7;
+              .picks-user {
+                color: #0c4b2b;
+                font-weight: 700;
+                white-space: nowrap;
               }
-              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) > div {
-                padding: 0 !important;
+              .picks-golfer {
+                color: #f0c84b;
+                font-weight: 700;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+              }
+              .picks-menu {
+                color: #0c4b2b;
+                font-weight: 700;
+              }
+              .picks-menu-button {
+                background: transparent;
+                border: none;
+                padding: 0;
+                margin: 0;
+                color: #0c4b2b;
+                font-weight: 700;
+                font-size: 18px;
+                cursor: pointer;
               }
               .picks-user {
                 color: #0c4b2b;
@@ -1466,24 +1490,27 @@ def main():
                 (selected_name,),
             ).fetchall()
             for row in tournament_picks:
-                col_a, col_b, col_c = st.columns([3, 4, 1])
-                col_a.markdown(
-                    f"<span class='picks-row-marker'></span><span class='picks-user'>{row['user']}</span>",
+                golfer_text = (row["golfer_list"] or "").replace("\n", " / ")
+                row_key = f"menu_pick_{row['user']}"
+                st.markdown(
+                    f"""
+                    <div class="picks-row">
+                      <div class="picks-row-left">
+                        <span class="picks-user">{row['user']}</span>
+                        <span class="picks-golfer">{golfer_text}</span>
+                      </div>
+                      <div class="picks-menu">
+                        <form action="" method="get">
+                          <button class="picks-menu-button" type="submit" name="pick_menu" value="{row_key}">...</button>
+                        </form>
+                      </div>
+                    </div>
+                    """,
                     unsafe_allow_html=True,
                 )
-                col_b.markdown(
-                    f"<span class='picks-golfer'>{(row['golfer_list'] or '').replace(chr(10), '<br/>')}</span>",
-                    unsafe_allow_html=True,
-                )
-                with col_c:
-                    menu_clicked = st.button(
-                        "...",
-                        key=f"menu_pick_{row['user']}",
-                        type="secondary",
-                    )
-                    if menu_clicked:
-                        st.session_state["delete_user"] = row["user"]
-                        st.session_state["delete_tourn"] = selected_name
+                if st.query_params.get("pick_menu") == row_key:
+                    st.session_state["delete_user"] = row["user"]
+                    st.session_state["delete_tourn"] = selected_name
 
         with col_right:
             st.markdown("#### Picks By Player")
