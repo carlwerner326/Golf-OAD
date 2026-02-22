@@ -1551,16 +1551,22 @@ def main():
                     st.rerun()
 
     with tab_tournaments:
+        today_str = date.today().isoformat()
         tournaments = conn.execute(
-            "SELECT name, start_date, end_date, is_major, is_signature, purse FROM tournaments ORDER BY start_date"
+            "SELECT name, start_date, end_date, is_major, is_signature, purse "
+            "FROM tournaments WHERE end_date >= ? ORDER BY start_date",
+            (today_str,),
         ).fetchall()
         st.dataframe(
             [
                 {
                     "Tournament": row["name"],
                     "Dates": f"{format_short_date(row['start_date'])} to {format_short_date(row['end_date'])}",
-                    "Major": "Yes" if row["is_major"] else "",
-                    "Signature": "Yes" if row["is_signature"] else "",
+                    "Type": "MAJOR"
+                    if row["is_major"]
+                    else "SIGNATURE"
+                    if row["is_signature"]
+                    else "",
                     "Purse": format_money(row["purse"]) if row["purse"] else "—",
                 }
                 for row in tournaments
