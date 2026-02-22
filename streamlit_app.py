@@ -1230,6 +1230,7 @@ def main():
               html, body {
                 background: radial-gradient(1200px 600px at 10% 0%, var(--midnight-slate) 0%, var(--midnight-base) 60%) !important;
                 background-attachment: fixed !important;
+                overflow-x: hidden !important;
               }
               .stApp,
               .st-emotion-cache-13k62yr {
@@ -1357,11 +1358,7 @@ def main():
                 right: 18px;
                 z-index: 1000;
               }
-              .picks-layout > div[data-testid="stHorizontalBlock"] {
-                background: transparent !important;
-                border: none !important;
-              }
-              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) {
+              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker):not(:has(div[data-testid="stHorizontalBlock"])) {
                 border: 2px solid #0c4b2b;
                 border-radius: 999px;
                 padding: 10px 14px;
@@ -1372,34 +1369,29 @@ def main():
                 gap: 12px;
                 flex-wrap: nowrap;
               }
-              @media (max-width: 768px) {
-                .picks-layout > div[data-testid="stHorizontalBlock"] {
+              div[data-testid="stHorizontalBlock"]:has(div[data-testid="stHorizontalBlock"]) {
+                background: transparent !important;
+                border: none !important;
+                padding: 0 !important;
+                border-radius: 0 !important;
+              }
+              @media (max-width: 900px) {
+                div[data-testid="stHorizontalBlock"]:has(div[data-testid="stHorizontalBlock"]):not(:has(.picks-row-marker)) {
                   flex-direction: column !important;
                 }
-                div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) {
-                  flex-direction: row !important;
+                div[data-testid="stHorizontalBlock"]:has(div[data-testid="stHorizontalBlock"]):not(:has(.picks-row-marker)) > div {
+                  width: 100% !important;
                 }
               }
               .picks-row-marker {
                 display: none;
               }
-              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) {
-                border: 2px solid #0c4b2b;
-                border-radius: 999px;
-                padding: 10px 14px;
-                margin-bottom: 10px;
-                background: #f7f3e7;
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                flex-wrap: nowrap;
-              }
-              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) .stMarkdown,
-              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) .stMarkdown > div,
-              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) .stMarkdown > div > div {
+              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker):not(:has(div[data-testid="stHorizontalBlock"])) .stMarkdown,
+              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker):not(:has(div[data-testid="stHorizontalBlock"])) .stMarkdown > div,
+              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker):not(:has(div[data-testid="stHorizontalBlock"])) .stMarkdown > div > div {
                 background: transparent !important;
               }
-              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker) > div {
+              div[data-testid="stHorizontalBlock"]:has(.picks-row-marker):not(:has(div[data-testid="stHorizontalBlock"])) > div {
                 padding: 0 !important;
               }
               .picks-user {
@@ -1535,9 +1527,7 @@ def main():
         ).fetchall()
         week_map = {row["name"]: idx + 1 for idx, row in enumerate(tournament_order)}
 
-        st.markdown('<div class="picks-layout">', unsafe_allow_html=True)
         col_left, col_right = st.columns([2, 3])
-
         # pick current tournament if in progress, otherwise next upcoming
         next_index = get_current_or_next_tournament_index(tournament_order)
 
@@ -1673,7 +1663,6 @@ def main():
                 hide_index=True,
             )
 
-        st.markdown("</div>", unsafe_allow_html=True)
 
         if is_admin(conn):
             st.markdown("#### Add Pick")
