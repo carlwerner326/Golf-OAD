@@ -1531,7 +1531,6 @@ def main():
             st.dataframe(
                 [
                     {
-                        "Week": week_map.get(row["tournament"], "—"),
                         "Tournament": f"{row['tournament']} ({format_short_date(row['start_date'])}–{format_short_date(row['end_date'])})",
                         "Golfer": row["golfer"],
                     }
