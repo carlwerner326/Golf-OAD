@@ -1589,6 +1589,7 @@ def main():
     )
 
     st.title("SplatStack Sports")
+    st.caption("Golf One & Done")
     # Subtitle removed per user preference.
 
     maybe_run_scheduled_sync(conn)
