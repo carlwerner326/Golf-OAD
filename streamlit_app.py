@@ -1427,6 +1427,18 @@ def main():
               section.main > div {
                 padding-top: 0 !important;
               }
+              [data-testid="stAppViewBlockContainer"] {
+                padding-top: 0 !important;
+                padding-bottom: 0 !important;
+              }
+              .brand-header {
+                margin-top: -24px;
+              }
+              @media (max-width: 700px) {
+                .brand-header {
+                  margin-top: -36px;
+                }
+              }
               .brand-header {
                 display: flex;
                 align-items: center;
