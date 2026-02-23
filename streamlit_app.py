@@ -1421,13 +1421,13 @@ def main():
                 padding: 0;
               }
               .brand-logo {
-                width: clamp(240px, 40vw, 420px);
+                width: clamp(300px, 55vw, 520px);
                 height: auto;
                 display: block;
               }
               @media (max-width: 700px) {
                 .brand-logo {
-                  width: clamp(180px, 70vw, 300px);
+                  width: clamp(260px, 90vw, 420px);
                 }
               }
               .masters-board {
@@ -1622,7 +1622,6 @@ def main():
         """,
         unsafe_allow_html=True,
     )
-    st.caption("Golf One & Done")
     # Subtitle removed per user preference.
 
     maybe_run_scheduled_sync(conn)
