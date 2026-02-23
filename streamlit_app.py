@@ -2105,6 +2105,16 @@ def main():
                 else:
                     st.info("Google Sheets storage: not configured. Using local backup.")
 
+                if st.button("Refresh Data From Sheets", type="primary"):
+                    clear_sheet_records_cache("picks")
+                    clear_sheet_records_cache("results")
+                    clear_sheet_records_cache("users")
+                    hydrate_users(conn)
+                    hydrate_picks(conn)
+                    hydrate_results(conn)
+                    st.success("Reloaded picks/results/users from Google Sheets.")
+                    st.rerun()
+
                 st.markdown("#### RapidAPI Key Check")
                 key_value = os.getenv("RAPIDAPI_KEY", "").strip()
                 host_value = os.getenv("RAPIDAPI_HOST", "live-golf-data.p.rapidapi.com").strip()
