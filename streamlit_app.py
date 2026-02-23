@@ -1415,17 +1415,19 @@ def main():
               .brand-header {
                 display: flex;
                 align-items: center;
-                margin: 0;
+                justify-content: center;
+                width: 100%;
+                margin: 0 0 6px 0;
                 padding: 0;
               }
               .brand-logo {
-                height: 36px;
+                height: 72px;
                 width: auto;
                 display: block;
               }
               @media (max-width: 700px) {
                 .brand-logo {
-                  height: 28px;
+                  height: 48px;
                 }
               }
               .masters-board {
