@@ -1421,13 +1421,13 @@ def main():
                 padding: 0;
               }
               .brand-logo {
-                height: 72px;
-                width: auto;
+                width: clamp(180px, 30vw, 320px);
+                height: auto;
                 display: block;
               }
               @media (max-width: 700px) {
                 .brand-logo {
-                  height: 48px;
+                  width: clamp(140px, 60vw, 240px);
                 }
               }
               .masters-board {
