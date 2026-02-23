@@ -1432,11 +1432,19 @@ def main():
                 padding-bottom: 0 !important;
               }
               .brand-header {
-                margin-top: -24px;
+                margin-top: -48px;
               }
               @media (max-width: 700px) {
                 .brand-header {
-                  margin-top: -36px;
+                  margin-top: -72px;
+                }
+              }
+              .block-container {
+                padding-top: 24px !important;
+              }
+              @media (max-width: 700px) {
+                .block-container {
+                  padding-top: 12px !important;
                 }
               }
               .brand-header {
