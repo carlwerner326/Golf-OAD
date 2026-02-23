@@ -1412,6 +1412,21 @@ def main():
               [data-testid="stHeader"], [data-testid="stToolbar"] {
                 background: transparent !important;
               }
+              [data-testid="stHeader"] {
+                height: 0 !important;
+                min-height: 0 !important;
+              }
+              [data-testid="stHeader"] * {
+                display: none !important;
+              }
+              [data-testid="stToolbar"] {
+                height: 0 !important;
+                min-height: 0 !important;
+                display: none !important;
+              }
+              section.main > div {
+                padding-top: 0 !important;
+              }
               .brand-header {
                 display: flex;
                 align-items: center;
