@@ -5,6 +5,7 @@ import re
 import sqlite3
 import textwrap
 import time as time_mod
+import base64
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 from typing import Optional
@@ -272,6 +273,12 @@ def load_env_file(path: str = ".env") -> None:
             value = value.strip().strip('"').strip("'")
             if key and key not in os.environ:
                 os.environ[key] = value
+
+def img_to_base64(path: str) -> str:
+    if not os.path.exists(path):
+        return ""
+    with open(path, "rb") as handle:
+        return base64.b64encode(handle.read()).decode("utf-8")
 
 
 def get_conn() -> sqlite3.Connection:
@@ -1405,6 +1412,22 @@ def main():
               [data-testid="stHeader"], [data-testid="stToolbar"] {
                 background: transparent !important;
               }
+              .brand-header {
+                display: flex;
+                align-items: center;
+                margin: 0;
+                padding: 0;
+              }
+              .brand-logo {
+                height: 36px;
+                width: auto;
+                display: block;
+              }
+              @media (max-width: 700px) {
+                .brand-logo {
+                  height: 28px;
+                }
+              }
               .masters-board {
                 border: 2px solid #0c4b2b;
                 border-radius: 12px;
@@ -1588,7 +1611,15 @@ def main():
         unsafe_allow_html=True,
     )
 
-    st.title("SplatStack Sports")
+    logo_path = os.path.join(os.path.dirname(__file__), "assets", "splatstack_logo.png")
+    st.markdown(
+        f"""
+        <div class="brand-header">
+          <img src="data:image/png;base64,{img_to_base64(logo_path)}" class="brand-logo" alt="SplatStack Sports" />
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     st.caption("Golf One & Done")
     # Subtitle removed per user preference.
 
