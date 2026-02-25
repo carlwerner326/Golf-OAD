@@ -1842,14 +1842,11 @@ def main():
         ).fetchall()
         for row in tournament_picks:
             show_locked = (
-                not admin_view
-                and row["user"] != current_user_name
+                row["user"] != current_user_name
                 and now_et < reveal_time
             )
             golfer_text = "🔒 Locked" if show_locked else (row["golfer_list"] or "").replace("\n", " / ")
-            can_manage = admin_view or (
-                row["user"] == current_user_name and now_et < reveal_time
-            )
+            can_manage = row["user"] == current_user_name and now_et < reveal_time
             row_key = f"menu_pick_{row['user']}"
             col_a, col_b, col_c = st.columns([2, 4, 1])
             col_a.markdown(
@@ -1979,8 +1976,7 @@ def main():
                     "Golfer": (
                         "Locked"
                         if (
-                            not admin_view
-                            and not is_own_player_view
+                            not is_own_player_view
                             and now_et < get_reveal_time(row["start_date"])
                         )
                         else row["golfer"]
