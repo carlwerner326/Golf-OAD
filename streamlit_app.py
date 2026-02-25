@@ -1971,11 +1971,20 @@ def main():
             """,
             (user_id,),
         ).fetchall()
+        is_own_player_view = user_label == current_user_name
         st.dataframe(
             [
                 {
                     "Tournament": f"{row['tournament']} ({format_short_date(row['start_date'])}–{format_short_date(row['end_date'])})",
-                    "Golfer": row["golfer"],
+                    "Golfer": (
+                        "Locked"
+                        if (
+                            not admin_view
+                            and not is_own_player_view
+                            and now_et < get_reveal_time(row["start_date"])
+                        )
+                        else row["golfer"]
+                    ),
                 }
                 for row in user_picks
             ],
