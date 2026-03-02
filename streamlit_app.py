@@ -244,7 +244,7 @@ def get_results_worksheet():
 
 def get_users_worksheet():
     global SHEETS_LAST_ERROR
-    client = get_sheets_client()
+    client = get_cached_sheets_client()
     sheet_id = get_sheets_id()
     if not client or not sheet_id:
         return None
@@ -651,7 +651,7 @@ def sync_users_to_sheet(conn: sqlite3.Connection) -> None:
     try:
         worksheet.clear()
         worksheet.update(values=values, range_name="A1")
-        clear_sheet_records_cache("picks")
+        clear_sheet_records_cache("users")
     except APIError:
         return
 def sync_picks_to_sheet(conn: sqlite3.Connection) -> None:
@@ -677,9 +677,16 @@ def sync_picks_to_sheet(conn: sqlite3.Connection) -> None:
     try:
         worksheet.clear()
         worksheet.update(values=values, range_name="A1")
-        clear_sheet_records_cache("users")
+        clear_sheet_records_cache("picks")
     except APIError:
         return
+
+
+def should_bootstrap_from_sheets(conn: sqlite3.Connection, table_name: str) -> bool:
+    try:
+        return conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0] == 0
+    except sqlite3.Error:
+        return False
 
 def persist_picks(conn: sqlite3.Connection) -> None:
     worksheet = get_picks_worksheet()
@@ -698,14 +705,17 @@ def persist_results(conn: sqlite3.Connection) -> None:
         sync_results_to_sheet(conn)
 
 def hydrate_picks(conn: sqlite3.Connection) -> None:
+    if not should_bootstrap_from_sheets(conn, "picks"):
+        return
     worksheet = get_picks_worksheet()
-    if worksheet:
-        if sync_picks_from_sheet(conn):
-            return
+    if worksheet and sync_picks_from_sheet(conn):
+        return
     if conn.execute("SELECT COUNT(*) FROM picks").fetchone()[0] == 0:
         restore_picks_snapshot(conn)
 
 def hydrate_users(conn: sqlite3.Connection) -> None:
+    if not should_bootstrap_from_sheets(conn, "users"):
+        return
     if get_users_worksheet():
         if sync_users_from_sheet(conn):
             return
@@ -713,9 +723,10 @@ def hydrate_users(conn: sqlite3.Connection) -> None:
 
 
 def hydrate_results(conn: sqlite3.Connection) -> None:
+    if not should_bootstrap_from_sheets(conn, "results"):
+        return
     if get_results_worksheet():
-        if sync_results_from_sheet(conn):
-            return
+        sync_results_from_sheet(conn)
 
 
 def restore_picks_snapshot(conn: sqlite3.Connection) -> bool:
@@ -2090,23 +2101,11 @@ def main():
                 st.markdown("#### Storage Status")
                 sheet_id = get_sheets_id()
                 if sheet_id:
-                    client = get_cached_sheets_client()
-                    connected = False
-                    if client:
-                        try:
-                            client.open_by_key(sheet_id)
-                            connected = True
-                        except Exception as exc:
-                            global SHEETS_LAST_ERROR
-                            SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
-                    if connected:
-                        st.success("Google Sheets storage: connected.")
-                        sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
-                        st.markdown(f"[Open Picks Sheet]({sheet_url})")
-                    else:
-                        st.warning("Google Sheets storage: configured but not connected.")
-                        if SHEETS_LAST_ERROR:
-                            st.caption(f"Sheets error: {SHEETS_LAST_ERROR}")
+                    st.success("Google Sheets storage: configured.")
+                    sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
+                    st.markdown(f"[Open Picks Sheet]({sheet_url})")
+                    if SHEETS_LAST_ERROR:
+                        st.caption(f"Last Sheets error: {SHEETS_LAST_ERROR}")
                 else:
                     st.info("Google Sheets storage: not configured. Using local backup.")
 
