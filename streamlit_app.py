@@ -36,7 +36,7 @@ import streamlit as st
 BDL_BASE = "https://api.balldontlie.io/pga/v1"
 
 USERS = ["Carl", "Jacob", "Vossy", "AJ", "Jordan", "Cade"]
-FREE_DOUBLE_PICK_TOURNAMENTS = {"Cognizant Classic"}
+FREE_DOUBLE_PICK_TOURNAMENTS = {"THE PLAYERS Championship"}
 
 SEED_GOLFERS = [
     ("Si Woo Kim", 5, 496),
@@ -1349,6 +1349,16 @@ def login_gate(conn: sqlite3.Connection) -> None:
     pin = st.text_input("PIN (4–6 digits)", type="password", key="login_pin")
 
     if user["pin_hash"] is None:
+        if get_sheets_id() and not st.session_state.get("users_sync_attempted"):
+            st.session_state["users_sync_attempted"] = True
+            if sync_users_from_sheet(conn):
+                refreshed_user = conn.execute(
+                    "SELECT id, name, is_admin, pin_hash FROM users WHERE id = ?",
+                    (user["id"],),
+                ).fetchone()
+                if refreshed_user and refreshed_user["pin_hash"] is not None:
+                    st.info("Recovered PIN settings from backup. Please sign in.")
+                    st.rerun()
         st.info("Set your PIN to continue.")
         pin_confirm = st.text_input("Confirm PIN", type="password", key="login_pin_confirm")
         if st.button("Set PIN"):
@@ -1362,10 +1372,12 @@ def login_gate(conn: sqlite3.Connection) -> None:
                 conn.commit()
                 persist_users(conn)
                 st.session_state["current_user_id"] = user["id"]
+                st.session_state["users_sync_attempted"] = False
                 st.rerun()
         st.stop()
 
     if st.button("Sign In"):
+        st.session_state["users_sync_attempted"] = False
         if not pin or len(pin) not in (4, 5, 6) or not pin.isdigit():
             st.error("Enter a 4–6 digit PIN.")
         elif user["pin_hash"] != hash_pin(pin):
