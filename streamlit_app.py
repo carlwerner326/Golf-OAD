@@ -1962,7 +1962,6 @@ def main():
                         key="user_pick_second",
                     )
                 elif pick_is_free_double:
-                    st.info("Special event: two picks this week (does not use season double-pick).")
                     second_golfer_name = st.selectbox(
                         "Second Golfer",
                         [g["name"] for g in golfers],
@@ -2228,8 +2227,6 @@ def main():
                     use_double_pick = False
                     if not is_major and not is_free_double:
                         use_double_pick = st.checkbox("Use season double-pick (non-major)", key="admin_use_double")
-                    elif is_free_double:
-                        st.info("Special event: two picks this week (does not use season double-pick).")
                     second_golfer_name = None
                     if is_major or is_free_double or use_double_pick:
                         second_golfer_name = st.selectbox(
