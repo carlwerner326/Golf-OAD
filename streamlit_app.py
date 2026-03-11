@@ -29,12 +29,14 @@ SHEETS_CACHE = {
     "client": None,
     "client_at": 0.0,
     "records": {},
+    "auto_refresh_at": 0.0,
 }
 import streamlit as st
 
 BDL_BASE = "https://api.balldontlie.io/pga/v1"
 
 USERS = ["Carl", "Jacob", "Vossy", "AJ", "Jordan", "Cade"]
+FREE_DOUBLE_PICK_TOURNAMENTS = {"Cognizant Classic"}
 
 SEED_GOLFERS = [
     ("Si Woo Kim", 5, 496),
@@ -139,6 +141,13 @@ def get_sheets_id() -> str:
 
 def get_sheets_scopes() -> list:
     return ["https://www.googleapis.com/auth/spreadsheets"]
+
+
+def get_free_double_pick_tournaments() -> set[str]:
+    configured = os.getenv("FREE_DOUBLE_PICK_TOURNAMENTS", "").strip()
+    if not configured:
+        return set(FREE_DOUBLE_PICK_TOURNAMENTS)
+    return {name.strip() for name in configured.split(",") if name.strip()}
 
 def get_sheets_client():
     global SHEETS_LAST_ERROR
@@ -474,6 +483,15 @@ def normalize_name(value: str) -> str:
     )
 
 
+def is_free_double_pick_event(tournament_row) -> bool:
+    tournament_name = ""
+    try:
+        tournament_name = (tournament_row["name"] or "").strip()
+    except Exception:
+        tournament_name = ""
+    return tournament_name in get_free_double_pick_tournaments()
+
+
 def save_picks_snapshot(conn: sqlite3.Connection) -> None:
     picks = conn.execute(
         """
@@ -727,6 +745,27 @@ def hydrate_results(conn: sqlite3.Connection) -> None:
         return
     if get_results_worksheet():
         sync_results_from_sheet(conn)
+
+
+def maybe_auto_refresh_from_sheets(conn: sqlite3.Connection, min_interval_seconds: int = 900) -> None:
+    if not get_sheets_id():
+        return
+    now = time_mod.time()
+    last_refresh = float(SHEETS_CACHE.get("auto_refresh_at", 0.0) or 0.0)
+    if (now - last_refresh) < min_interval_seconds:
+        return
+    SHEETS_CACHE["auto_refresh_at"] = now
+    clear_sheet_records_cache("users")
+    clear_sheet_records_cache("picks")
+    clear_sheet_records_cache("results")
+    try:
+        sync_users_from_sheet(conn)
+        sync_picks_from_sheet(conn)
+        sync_results_from_sheet(conn)
+    except Exception as exc:
+        global SHEETS_LAST_ERROR
+        SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
+        return
 
 
 def restore_picks_snapshot(conn: sqlite3.Connection) -> bool:
@@ -1376,6 +1415,7 @@ def main():
     conn = get_conn()
     init_db(conn)
     seed_if_needed(conn)
+    maybe_auto_refresh_from_sheets(conn)
     hydrate_users(conn)
     hydrate_picks(conn)
     hydrate_results(conn)
@@ -1893,6 +1933,7 @@ def main():
                     [f"{t['name']} ({format_short_date(t['start_date'])}–{format_short_date(t['end_date'])})" for t in upcoming].index(pick_tournament_label)
                 ]
                 pick_is_major = bool(selected_pick["is_major"])
+                pick_is_free_double = is_free_double_pick_event(selected_pick)
                 pick_reveal_time = get_reveal_time(selected_pick["start_date"])
                 if now_et >= pick_reveal_time:
                     st.warning("Picks are locked for this tournament.")
@@ -1903,6 +1944,13 @@ def main():
                 second_golfer_name = None
                 use_double_pick = False
                 if pick_is_major:
+                    second_golfer_name = st.selectbox(
+                        "Second Golfer",
+                        [g["name"] for g in golfers],
+                        key="user_pick_second",
+                    )
+                elif pick_is_free_double:
+                    st.info("Special event: two picks this week (does not use season double-pick).")
                     second_golfer_name = st.selectbox(
                         "Second Golfer",
                         [g["name"] for g in golfers],
@@ -1934,10 +1982,14 @@ def main():
                         st.error("You already used the second golfer.")
                     elif second_golfer_id and second_golfer_id == golfer_id:
                         st.error("Choose two different golfers.")
-                    elif use_double_pick and conn.execute(
+                    elif (
+                        use_double_pick
+                        and not pick_is_free_double
+                        and conn.execute(
                         "SELECT double_pick_used FROM users WHERE id = ?",
                         (user_id,),
-                    ).fetchone()[0] == 1:
+                    ).fetchone()[0] == 1
+                    ):
                         st.error("You already used the season double-pick.")
                     else:
                         conn.execute(
@@ -1953,7 +2005,7 @@ def main():
                                 "INSERT INTO picks (user_id, tournament_id, golfer_id, created_at) VALUES (?, ?, ?, ?)",
                                 (user_id, selected_pick["id"], second_golfer_id, datetime.utcnow().isoformat()),
                             )
-                            if not pick_is_major and use_double_pick:
+                            if (not pick_is_major) and (not pick_is_free_double) and use_double_pick:
                                 conn.execute(
                                     "UPDATE users SET double_pick_used = 1 WHERE id = ?",
                                     (user_id,),
@@ -2159,12 +2211,15 @@ def main():
                         [f"{t['name']} ({format_short_date(t['start_date'])}–{format_short_date(t['end_date'])})" for t in tournaments].index(tournament_name)
                     ]
                     is_major = bool(selected_tournament["is_major"])
+                    is_free_double = is_free_double_pick_event(selected_tournament)
                     st.caption("Major event" if is_major else "Regular event")
                     use_double_pick = False
-                    if not is_major:
+                    if not is_major and not is_free_double:
                         use_double_pick = st.checkbox("Use season double-pick (non-major)", key="admin_use_double")
+                    elif is_free_double:
+                        st.info("Special event: two picks this week (does not use season double-pick).")
                     second_golfer_name = None
-                    if is_major or use_double_pick:
+                    if is_major or is_free_double or use_double_pick:
                         second_golfer_name = st.selectbox(
                             "Second Golfer",
                             [g["name"] for g in golfers],
@@ -2199,10 +2254,14 @@ def main():
                             st.error("User already used the second golfer.")
                         elif second_golfer_id and second_golfer_id == golfer_id:
                             st.error("Choose two different golfers.")
-                        elif use_double_pick and conn.execute(
+                        elif (
+                            use_double_pick
+                            and not is_free_double
+                            and conn.execute(
                             "SELECT double_pick_used FROM users WHERE id = ?",
                             (user_id,),
-                        ).fetchone()[0] == 1:
+                        ).fetchone()[0] == 1
+                        ):
                             st.error("User already used the season double-pick.")
                         else:
                             conn.execute(
@@ -2214,7 +2273,7 @@ def main():
                                     "INSERT INTO picks (user_id, tournament_id, golfer_id, created_at) VALUES (?, ?, ?, ?)",
                                     (user_id, tournament_id, second_golfer_id, datetime.utcnow().isoformat()),
                                 )
-                                if not is_major and use_double_pick:
+                                if (not is_major) and (not is_free_double) and use_double_pick:
                                     conn.execute(
                                         "UPDATE users SET double_pick_used = 1 WHERE id = ?",
                                         (user_id,),
