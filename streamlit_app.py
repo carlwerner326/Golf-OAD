@@ -2109,17 +2109,19 @@ def main():
                         st.error("Golfer name is required.")
                     else:
                         conn.execute(
-                            "INSERT OR IGNORE INTO golfers (name) VALUES (?)",
+                            "INSERT INTO golfers (name, active) VALUES (?, 1) "
+                            "ON CONFLICT(name) DO UPDATE SET active = 1",
                             (gname.strip(),),
                         )
                         conn.commit()
                         st.success("Golfer added.")
+                        st.rerun()
 
                 st.markdown("#### Bulk Import Golfers")
                 bulk_golfers = st.text_area("Paste golfers", height=160)
                 st.caption("Format: Name only OR Name, Rank, Points (Rank/Points optional)")
                 if st.button("Import Golfers", type="primary"):
-                    count = 0
+                    added_or_reactivated = 0
                     for line in bulk_golfers.splitlines():
                         parts = [p.strip() for p in line.split(",") if p.strip()]
                         if not parts:
@@ -2128,12 +2130,14 @@ def main():
                         rank = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
                         points = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else None
                         conn.execute(
-                            "INSERT OR IGNORE INTO golfers (name, fedex_rank, fedex_points) VALUES (?, ?, ?)",
+                            "INSERT INTO golfers (name, fedex_rank, fedex_points, active) VALUES (?, ?, ?, 1) "
+                            "ON CONFLICT(name) DO UPDATE SET active = 1, fedex_rank = COALESCE(excluded.fedex_rank, golfers.fedex_rank), fedex_points = COALESCE(excluded.fedex_points, golfers.fedex_points)",
                             (name, rank, points),
                         )
-                        count += 1
+                        added_or_reactivated += 1
                     conn.commit()
-                    st.success(f"Imported {count} golfer lines.")
+                    st.success(f"Imported {added_or_reactivated} golfer lines.")
+                    st.rerun()
 
                 st.markdown("#### Replace Roster (Name Only)")
                 roster_text = st.text_area("Paste full roster (one golfer per line)", height=200, key="roster_replace")
@@ -2152,6 +2156,30 @@ def main():
                             )
                         conn.commit()
                         st.success(f"Roster replaced with {len(names)} golfers.")
+                        st.rerun()
+
+                st.markdown("#### Remove Golfers From Current Field")
+                active_for_removal = conn.execute(
+                    "SELECT name FROM golfers WHERE active = 1 ORDER BY name"
+                ).fetchall()
+                remove_choices = [row["name"] for row in active_for_removal]
+                remove_names = st.multiselect(
+                    "Select golfers to remove from active field",
+                    remove_choices,
+                    key="remove_golfers_active",
+                )
+                st.caption("This deactivates golfers from this week's field only. Historical picks/results remain intact.")
+                if st.button("Remove Selected Golfers", type="secondary"):
+                    if not remove_names:
+                        st.error("Select at least one golfer.")
+                    else:
+                        conn.executemany(
+                            "UPDATE golfers SET active = 0 WHERE name = ?",
+                            [(name,) for name in remove_names],
+                        )
+                        conn.commit()
+                        st.success(f"Removed {len(remove_names)} golfer(s) from active field.")
+                        st.rerun()
 
     if tab_admin:
         with tab_admin:
