@@ -29,7 +29,6 @@ SHEETS_CACHE = {
     "client": None,
     "client_at": 0.0,
     "records": {},
-    "auto_refresh_at": 0.0,
 }
 import streamlit as st
 
@@ -747,27 +746,6 @@ def hydrate_results(conn: sqlite3.Connection) -> None:
         sync_results_from_sheet(conn)
 
 
-def maybe_auto_refresh_from_sheets(conn: sqlite3.Connection, min_interval_seconds: int = 900) -> None:
-    if not get_sheets_id():
-        return
-    now = time_mod.time()
-    last_refresh = float(SHEETS_CACHE.get("auto_refresh_at", 0.0) or 0.0)
-    if (now - last_refresh) < min_interval_seconds:
-        return
-    SHEETS_CACHE["auto_refresh_at"] = now
-    clear_sheet_records_cache("users")
-    clear_sheet_records_cache("picks")
-    clear_sheet_records_cache("results")
-    try:
-        sync_users_from_sheet(conn)
-        sync_picks_from_sheet(conn)
-        sync_results_from_sheet(conn)
-    except Exception as exc:
-        global SHEETS_LAST_ERROR
-        SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
-        return
-
-
 def restore_picks_snapshot(conn: sqlite3.Connection) -> bool:
     path = get_picks_backup_path()
     if not os.path.exists(path):
@@ -1427,7 +1405,6 @@ def main():
     conn = get_conn()
     init_db(conn)
     seed_if_needed(conn)
-    maybe_auto_refresh_from_sheets(conn)
     hydrate_users(conn)
     hydrate_picks(conn)
     hydrate_results(conn)
