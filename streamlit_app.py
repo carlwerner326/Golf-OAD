@@ -6,6 +6,7 @@ import sqlite3
 import textwrap
 import time as time_mod
 import base64
+import unicodedata
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 from typing import Optional
@@ -128,6 +129,51 @@ INITIAL_PICKS = [
     ("Vossy", "Cameron Young", 34_080, None),
 ]
 
+RECOVERY_PICKS = [
+    ("Jacob", "WM Phoenix Open", "Si Woo Kim"),
+    ("Jacob", "AT&T Pebble Beach Pro-Am", "Justin Rose"),
+    ("Jacob", "The Genesis Invitational", "Harris English"),
+    ("Jacob", "Cognizant Classic", "Nicolai Hojgaard"),
+    ("Jacob", "Arnold Palmer Invitational pres. by Mastercard", "Tommy Fleetwood"),
+    ("Jacob", "THE PLAYERS Championship", "Sepp Straka"),
+    ("Jacob", "THE PLAYERS Championship", "Viktor Hovland"),
+    ("AJ", "WM Phoenix Open", "Cameron Young"),
+    ("AJ", "AT&T Pebble Beach Pro-Am", "Viktor Hovland"),
+    ("AJ", "The Genesis Invitational", "Jake Knapp"),
+    ("AJ", "Cognizant Classic", "Ryan Gerard"),
+    ("AJ", "Arnold Palmer Invitational pres. by Mastercard", "Ludvig Aberg"),
+    ("AJ", "THE PLAYERS Championship", "Chris Gotterup"),
+    ("AJ", "THE PLAYERS Championship", "Adam Scott"),
+    ("Vossy", "WM Phoenix Open", "Cameron Young"),
+    ("Vossy", "AT&T Pebble Beach Pro-Am", "Russell Henley"),
+    ("Vossy", "The Genesis Invitational", "Tommy Fleetwood"),
+    ("Vossy", "Cognizant Classic", "Daniel Berger"),
+    ("Vossy", "Arnold Palmer Invitational pres. by Mastercard", "Matt Fitzpatrick"),
+    ("Vossy", "THE PLAYERS Championship", "Scottie Scheffler"),
+    ("Vossy", "THE PLAYERS Championship", "Ludvig Aberg"),
+    ("Carl", "WM Phoenix Open", "Maverick McNealy"),
+    ("Carl", "AT&T Pebble Beach Pro-Am", "Russell Henley"),
+    ("Carl", "The Genesis Invitational", "Hideki Matsuyama"),
+    ("Carl", "Cognizant Classic", "Michael Thorbjornsen"),
+    ("Carl", "Arnold Palmer Invitational pres. by Mastercard", "Scottie Scheffler"),
+    ("Carl", "THE PLAYERS Championship", "Si Woo Kim"),
+    ("Carl", "THE PLAYERS Championship", "Ludvig Aberg"),
+    ("Jordan", "WM Phoenix Open", "Sahith Theegala"),
+    ("Jordan", "AT&T Pebble Beach Pro-Am", "Russell Henley"),
+    ("Jordan", "The Genesis Invitational", "Sam Burns"),
+    ("Jordan", "Cognizant Classic", "Daniel Berger"),
+    ("Jordan", "Arnold Palmer Invitational pres. by Mastercard", "Xander Schauffele"),
+    ("Jordan", "THE PLAYERS Championship", "Cameron Young"),
+    ("Jordan", "THE PLAYERS Championship", "Tommy Fleetwood"),
+    ("Cade", "WM Phoenix Open", "Maverick McNealy"),
+    ("Cade", "AT&T Pebble Beach Pro-Am", "Justin Rose"),
+    ("Cade", "The Genesis Invitational", "Jason Day"),
+    ("Cade", "Cognizant Classic", "Shane Lowry"),
+    ("Cade", "Arnold Palmer Invitational pres. by Mastercard", "Tommy Fleetwood"),
+    ("Cade", "THE PLAYERS Championship", "Akshay Bhatia"),
+    ("Cade", "THE PLAYERS Championship", "Ludvig Aberg"),
+]
+
 
 def get_db_path() -> str:
     return os.getenv("GOLF_DB_PATH", os.path.join("data", "golf.db"))
@@ -137,6 +183,14 @@ def get_picks_backup_path() -> str:
 
 def get_sheets_id() -> str:
     return os.getenv("GOOGLE_SHEETS_ID", "").strip()
+
+
+def normalize_lookup_name(value: str) -> str:
+    value = unicodedata.normalize("NFKD", value or "")
+    value = "".join(ch for ch in value if not unicodedata.combining(ch))
+    value = value.lower().replace(".", "").replace("'", "")
+    value = re.sub(r"\s+", " ", value).strip()
+    return value
 
 def get_sheets_scopes() -> list:
     return ["https://www.googleapis.com/auth/spreadsheets"]
@@ -469,6 +523,56 @@ def seed_if_needed(conn: sqlite3.Connection) -> None:
             )
 
     conn.commit()
+
+
+def resolve_entity_id(conn: sqlite3.Connection, table: str, name: str) -> Optional[int]:
+    row = conn.execute(f"SELECT id FROM {table} WHERE name = ?", (name,)).fetchone()
+    if row:
+        return row["id"]
+    normalized_target = normalize_lookup_name(name)
+    for candidate in conn.execute(f"SELECT id, name FROM {table}").fetchall():
+        if normalize_lookup_name(candidate["name"]) == normalized_target:
+            return candidate["id"]
+    return None
+
+
+def reconcile_recovery_picks(conn: sqlite3.Connection) -> bool:
+    desired: dict[tuple[int, int], list[int]] = {}
+    unresolved: list[tuple[str, str, str]] = []
+    for user_name, tournament_name, golfer_name in RECOVERY_PICKS:
+        user_id = resolve_entity_id(conn, "users", user_name)
+        tournament_id = resolve_entity_id(conn, "tournaments", tournament_name)
+        golfer_id = resolve_entity_id(conn, "golfers", golfer_name)
+        if not user_id or not tournament_id or not golfer_id:
+            unresolved.append((user_name, tournament_name, golfer_name))
+            continue
+        desired.setdefault((user_id, tournament_id), []).append(golfer_id)
+
+    changed = False
+    for (user_id, tournament_id), desired_ids in desired.items():
+        desired_set = sorted(set(desired_ids))
+        existing = conn.execute(
+            "SELECT golfer_id FROM picks WHERE user_id = ? AND tournament_id = ? ORDER BY golfer_id",
+            (user_id, tournament_id),
+        ).fetchall()
+        existing_set = sorted(row["golfer_id"] for row in existing)
+        if existing_set == desired_set:
+            continue
+        conn.execute(
+            "DELETE FROM picks WHERE user_id = ? AND tournament_id = ?",
+            (user_id, tournament_id),
+        )
+        created_at = datetime.utcnow().isoformat()
+        conn.executemany(
+            "INSERT INTO picks (user_id, tournament_id, golfer_id, created_at) VALUES (?, ?, ?, ?)",
+            [(user_id, tournament_id, golfer_id, created_at) for golfer_id in desired_set],
+        )
+        changed = True
+
+    if changed:
+        conn.commit()
+        persist_picks(conn)
+    return changed
 
 
 def normalize_name(value: str) -> str:
@@ -1455,6 +1559,7 @@ def main():
     hydrate_users(conn)
     hydrate_picks(conn)
     hydrate_results(conn)
+    reconcile_recovery_picks(conn)
 
     login_gate(conn)
 
