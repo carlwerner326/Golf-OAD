@@ -355,6 +355,11 @@ def init_db(conn: sqlite3.Connection) -> None:
           FOREIGN KEY(golfer_id) REFERENCES golfers(id) ON DELETE CASCADE,
           UNIQUE(tournament_id, golfer_id)
         );
+
+        CREATE TABLE IF NOT EXISTS sync_meta (
+          key TEXT PRIMARY KEY,
+          value TEXT
+        );
         """
     )
 
@@ -581,14 +586,24 @@ def sync_results_from_sheet(conn: sqlite3.Connection) -> bool:
         "INSERT OR IGNORE INTO results (tournament_id, golfer_id, purse, position) VALUES (?, ?, ?, ?)",
         pending,
     )
+    latest_updated_at = max(
+        (str(row.get("updated_at") or "").strip() for row in rows),
+        default="",
+    )
+    if latest_updated_at:
+        conn.execute(
+            "INSERT INTO sync_meta (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            ("results_sheet_updated_at", latest_updated_at),
+        )
     conn.commit()
     return True
 
 
-def sync_results_to_sheet(conn: sqlite3.Connection) -> None:
+def sync_results_to_sheet(conn: sqlite3.Connection) -> bool:
     worksheet = get_results_worksheet()
     if not worksheet:
-        return
+        return False
     rows = conn.execute(
         """
         SELECT tournaments.name as tournament,
@@ -611,10 +626,17 @@ def sync_results_to_sheet(conn: sqlite3.Connection) -> None:
         worksheet.clear()
         worksheet.update(values=values, range_name="A1")
         clear_sheet_records_cache("results")
+        conn.execute(
+            "INSERT INTO sync_meta (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            ("results_sheet_updated_at", now),
+        )
+        conn.commit()
+        return True
     except APIError as exc:
         global SHEETS_LAST_ERROR
         SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
-        return
+        return False
 
 def sync_users_from_sheet(conn: sqlite3.Connection) -> bool:
     worksheet = get_users_worksheet()
@@ -727,9 +749,10 @@ def persist_users(conn: sqlite3.Connection) -> None:
         sync_users_to_sheet(conn)
 
 
-def persist_results(conn: sqlite3.Connection) -> None:
+def persist_results(conn: sqlite3.Connection) -> bool:
     if get_results_worksheet():
-        sync_results_to_sheet(conn)
+        return sync_results_to_sheet(conn)
+    return True
 
 def hydrate_picks(conn: sqlite3.Connection) -> None:
     if not should_bootstrap_from_sheets(conn, "picks"):
@@ -750,9 +773,23 @@ def hydrate_users(conn: sqlite3.Connection) -> None:
 
 
 def hydrate_results(conn: sqlite3.Connection) -> None:
-    if not should_bootstrap_from_sheets(conn, "results"):
+    worksheet = get_results_worksheet()
+    if not worksheet:
         return
-    if get_results_worksheet():
+    rows = get_cached_sheet_records("results")
+    if rows is None or not rows:
+        return
+    local_count = conn.execute("SELECT COUNT(*) FROM results").fetchone()[0]
+    latest_sheet_updated_at = max(
+        (str(row.get("updated_at") or "").strip() for row in rows),
+        default="",
+    )
+    last_synced = conn.execute(
+        "SELECT value FROM sync_meta WHERE key = ?",
+        ("results_sheet_updated_at",),
+    ).fetchone()
+    last_synced_value = last_synced["value"] if last_synced else ""
+    if local_count == 0 or (latest_sheet_updated_at and latest_sheet_updated_at > last_synced_value):
         sync_results_from_sheet(conn)
 
 
@@ -2343,8 +2380,10 @@ def main():
                         (t_id, g_id, int(purse), int(position)),
                     )
                     conn.commit()
-                    persist_results(conn)
-                    st.success("Result saved.")
+                    if persist_results(conn):
+                        st.success("Result saved.")
+                    else:
+                        st.warning("Result saved locally, but Sheets backup failed. Avoid rebooting until backup is healthy.")
 
             with col_b:
                 st.markdown("**Paste From Clipboard**")
@@ -2403,8 +2442,12 @@ def main():
                                 )
                                 imported += 1
                             conn.commit()
-                            persist_results(conn)
-                            st.success(f"Imported {imported} results from clipboard.")
+                            if persist_results(conn):
+                                st.success(f"Imported {imported} results from clipboard.")
+                            else:
+                                st.warning(
+                                    f"Imported {imported} results locally, but Sheets backup failed. Avoid rebooting until backup is healthy."
+                                )
 
     st.markdown(
         "<div style='margin-top: 32px; color: #8c939c; font-size: 12px;'>© 2026 SplatStack</div>",
