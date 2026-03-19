@@ -447,7 +447,7 @@ def seed_if_needed(conn: sqlite3.Connection) -> None:
                 (name, start, end, is_major, is_signature, season, purse),
             )
 
-    if conn.execute("SELECT COUNT(*) FROM picks").fetchone()[0] == 0:
+    if conn.execute("SELECT COUNT(*) FROM picks").fetchone()[0] == 0 and not get_sheets_id():
         tournament_id = conn.execute(
             "SELECT id FROM tournaments WHERE name = ?", ("WM Phoenix Open",)
         ).fetchone()[0]
@@ -611,7 +611,9 @@ def sync_results_to_sheet(conn: sqlite3.Connection) -> None:
         worksheet.clear()
         worksheet.update(values=values, range_name="A1")
         clear_sheet_records_cache("results")
-    except APIError:
+    except APIError as exc:
+        global SHEETS_LAST_ERROR
+        SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
         return
 
 def sync_users_from_sheet(conn: sqlite3.Connection) -> bool:
@@ -669,12 +671,16 @@ def sync_users_to_sheet(conn: sqlite3.Connection) -> None:
         worksheet.clear()
         worksheet.update(values=values, range_name="A1")
         clear_sheet_records_cache("users")
-    except APIError:
+    except APIError as exc:
+        global SHEETS_LAST_ERROR
+        SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
         return
-def sync_picks_to_sheet(conn: sqlite3.Connection) -> None:
+
+
+def sync_picks_to_sheet(conn: sqlite3.Connection) -> bool:
     worksheet = get_picks_worksheet()
     if not worksheet:
-        return
+        return False
     picks = conn.execute(
         """
         SELECT users.name as user,
@@ -695,8 +701,11 @@ def sync_picks_to_sheet(conn: sqlite3.Connection) -> None:
         worksheet.clear()
         worksheet.update(values=values, range_name="A1")
         clear_sheet_records_cache("picks")
-    except APIError:
-        return
+        return True
+    except APIError as exc:
+        global SHEETS_LAST_ERROR
+        SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
+        return False
 
 
 def should_bootstrap_from_sheets(conn: sqlite3.Connection, table_name: str) -> bool:
@@ -705,12 +714,13 @@ def should_bootstrap_from_sheets(conn: sqlite3.Connection, table_name: str) -> b
     except sqlite3.Error:
         return False
 
-def persist_picks(conn: sqlite3.Connection) -> None:
+def persist_picks(conn: sqlite3.Connection) -> bool:
+    # Always keep a local snapshot even when Sheets is configured.
+    save_picks_snapshot(conn)
     worksheet = get_picks_worksheet()
     if worksheet:
-        sync_picks_to_sheet(conn)
-    else:
-        save_picks_snapshot(conn)
+        return sync_picks_to_sheet(conn)
+    return True
 
 def persist_users(conn: sqlite3.Connection) -> None:
     if get_users_worksheet():
@@ -1859,10 +1869,13 @@ def main():
                         (pending_delete_user, pending_delete_tourn),
                     )
                     conn.commit()
-                    persist_picks(conn)
+                    backup_ok = persist_picks(conn)
                     st.session_state["delete_user"] = None
                     st.session_state["delete_tourn"] = None
-                    st.success("Picks deleted.")
+                    if backup_ok:
+                        st.success("Picks deleted.")
+                    else:
+                        st.warning("Picks deleted locally, but Sheets backup failed. Do not reboot until this is fixed.")
                 if col_cancel.button("Cancel", key="cancel_delete_pick", type="primary"):
                     st.session_state["delete_user"] = None
                     st.session_state["delete_tourn"] = None
@@ -1974,9 +1987,9 @@ def main():
                         use_double_pick
                         and not pick_is_free_double
                         and conn.execute(
-                        "SELECT double_pick_used FROM users WHERE id = ?",
-                        (user_id,),
-                    ).fetchone()[0] == 1
+                            "SELECT double_pick_used FROM users WHERE id = ?",
+                            (user_id,),
+                        ).fetchone()[0] == 1
                     ):
                         st.error("You already used the season double-pick.")
                     else:
@@ -1999,10 +2012,13 @@ def main():
                                     (user_id,),
                                 )
                                 persist_users(conn)
-                    conn.commit()
-                    persist_picks(conn)
-                    st.success("Pick saved.")
-                    st.rerun()
+                        conn.commit()
+                        backup_ok = persist_picks(conn)
+                        if backup_ok:
+                            st.success("Pick saved.")
+                        else:
+                            st.warning("Pick saved locally, but Sheets backup failed. Do not reboot until this is fixed.")
+                        st.rerun()
 
         st.markdown("#### Picks By Player")
         users = conn.execute("SELECT id, name FROM users ORDER BY name").fetchall()
@@ -2277,8 +2293,11 @@ def main():
                                     )
                                     persist_users(conn)
                             conn.commit()
-                            persist_picks(conn)
-                            st.success("Pick saved.")
+                            backup_ok = persist_picks(conn)
+                            if backup_ok:
+                                st.success("Pick saved.")
+                            else:
+                                st.warning("Pick saved locally, but Sheets backup failed. Do not reboot until this is fixed.")
                             st.rerun()
                     if st.button("Delete Picks (Admin)", key="admin_delete_picks", type="secondary"):
                         user_id = next(u["id"] for u in users if u["name"] == user_name)
@@ -2288,8 +2307,11 @@ def main():
                             (user_id, tournament_id),
                         )
                         conn.commit()
-                        persist_picks(conn)
-                        st.success("Picks deleted.")
+                        backup_ok = persist_picks(conn)
+                        if backup_ok:
+                            st.success("Picks deleted.")
+                        else:
+                            st.warning("Picks deleted locally, but Sheets backup failed. Do not reboot until this is fixed.")
                         st.rerun()
                 with col_pick_right:
                     st.markdown("**Admin Notes**")
