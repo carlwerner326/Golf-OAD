@@ -536,13 +536,28 @@ def resolve_entity_id(conn: sqlite3.Connection, table: str, name: str) -> Option
     return None
 
 
+def ensure_golfer_id(conn: sqlite3.Connection, name: str) -> Optional[int]:
+    golfer_id = resolve_entity_id(conn, "golfers", name)
+    if golfer_id:
+        return golfer_id
+    cleaned = (name or "").strip()
+    if not cleaned:
+        return None
+    cursor = conn.execute(
+        "INSERT INTO golfers (name, active) VALUES (?, 0)",
+        (cleaned,),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
 def reconcile_recovery_picks(conn: sqlite3.Connection) -> bool:
     desired: dict[tuple[int, int], list[int]] = {}
     unresolved: list[tuple[str, str, str]] = []
     for user_name, tournament_name, golfer_name in RECOVERY_PICKS:
         user_id = resolve_entity_id(conn, "users", user_name)
         tournament_id = resolve_entity_id(conn, "tournaments", tournament_name)
-        golfer_id = resolve_entity_id(conn, "golfers", golfer_name)
+        golfer_id = ensure_golfer_id(conn, golfer_name)
         if not user_id or not tournament_id or not golfer_id:
             unresolved.append((user_name, tournament_name, golfer_name))
             continue
@@ -641,18 +656,11 @@ def sync_picks_from_sheet(conn: sqlite3.Connection) -> bool:
     for row in rows:
         user = conn.execute("SELECT id FROM users WHERE name = ?", (row.get("user"),)).fetchone()
         tournament = conn.execute("SELECT id FROM tournaments WHERE name = ?", (row.get("tournament"),)).fetchone()
-        golfer_name = row.get("golfer")
-        golfer = conn.execute("SELECT id FROM golfers WHERE name = ?", (golfer_name,)).fetchone()
-        if golfer_name and not golfer:
-            conn.execute(
-                "INSERT OR IGNORE INTO golfers (name, active) VALUES (?, 1)",
-                (golfer_name,),
-            )
-            golfer = conn.execute("SELECT id FROM golfers WHERE name = ?", (golfer_name,)).fetchone()
-        if not user or not tournament or not golfer:
+        golfer_id = ensure_golfer_id(conn, row.get("golfer"))
+        if not user or not tournament or not golfer_id:
             continue
         pending.append(
-            (user["id"], tournament["id"], golfer["id"], row.get("created_at") or datetime.utcnow().isoformat())
+            (user["id"], tournament["id"], golfer_id, row.get("created_at") or datetime.utcnow().isoformat())
         )
     if not pending:
         return False
@@ -677,12 +685,12 @@ def sync_results_from_sheet(conn: sqlite3.Connection) -> bool:
     pending = []
     for row in rows:
         tournament = conn.execute("SELECT id FROM tournaments WHERE name = ?", (row.get("tournament"),)).fetchone()
-        golfer = conn.execute("SELECT id FROM golfers WHERE name = ?", (row.get("golfer"),)).fetchone()
-        if not tournament or not golfer:
+        golfer_id = ensure_golfer_id(conn, row.get("golfer"))
+        if not tournament or not golfer_id:
             continue
         purse = row.get("purse") or 0
         position = row.get("position")
-        pending.append((tournament["id"], golfer["id"], int(purse), int(position) if position else None))
+        pending.append((tournament["id"], golfer_id, int(purse), int(position) if position else None))
     if not pending:
         return False
     conn.execute("DELETE FROM results")
@@ -904,12 +912,12 @@ def restore_picks_snapshot(conn: sqlite3.Connection) -> bool:
     for row in payload:
         user = conn.execute("SELECT id FROM users WHERE name = ?", (row["user"],)).fetchone()
         tournament = conn.execute("SELECT id FROM tournaments WHERE name = ?", (row["tournament"],)).fetchone()
-        golfer = conn.execute("SELECT id FROM golfers WHERE name = ?", (row["golfer"],)).fetchone()
+        golfer_id = ensure_golfer_id(conn, row["golfer"])
         if not user or not tournament or not golfer:
             continue
         conn.execute(
             "INSERT OR IGNORE INTO picks (user_id, tournament_id, golfer_id, created_at) VALUES (?, ?, ?, ?)",
-            (user["id"], tournament["id"], golfer["id"], row.get("created_at") or datetime.utcnow().isoformat()),
+            (user["id"], tournament["id"], golfer_id, row.get("created_at") or datetime.utcnow().isoformat()),
         )
         restored += 1
     conn.commit()
