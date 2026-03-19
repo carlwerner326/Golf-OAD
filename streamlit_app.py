@@ -883,18 +883,10 @@ def hydrate_results(conn: sqlite3.Connection) -> None:
     rows = get_cached_sheet_records("results")
     if rows is None or not rows:
         return
-    local_count = conn.execute("SELECT COUNT(*) FROM results").fetchone()[0]
-    latest_sheet_updated_at = max(
-        (str(row.get("updated_at") or "").strip() for row in rows),
-        default="",
-    )
-    last_synced = conn.execute(
-        "SELECT value FROM sync_meta WHERE key = ?",
-        ("results_sheet_updated_at",),
-    ).fetchone()
-    last_synced_value = last_synced["value"] if last_synced else ""
-    if local_count == 0 or (latest_sheet_updated_at and latest_sheet_updated_at > last_synced_value):
-        sync_results_from_sheet(conn)
+    # Results are authoritative in Google Sheets for this app.
+    # Keep local SQLite aligned on every app run, while still benefiting
+    # from the in-process sheet record cache to avoid quota spam.
+    sync_results_from_sheet(conn)
 
 
 def restore_picks_snapshot(conn: sqlite3.Connection) -> bool:
