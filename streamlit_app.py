@@ -37,6 +37,14 @@ BDL_BASE = "https://api.balldontlie.io/pga/v1"
 
 USERS = ["Carl", "Jacob", "Vossy", "AJ", "Jordan", "Cade"]
 FREE_DOUBLE_PICK_TOURNAMENTS = {"THE PLAYERS Championship"}
+LEADERBOARD_TOTAL_OVERRIDES = {
+    "Jordan": 6_420_223,
+    "Vossy": 3_200_929,
+    "AJ": 2_968_963,
+    "Jacob": 2_903_286,
+    "Cade": 2_455_308,
+    "Carl": 2_023_358,
+}
 
 SEED_GOLFERS = [
     ("Si Woo Kim", 5, 496),
@@ -438,6 +446,12 @@ def init_db(conn: sqlite3.Connection) -> None:
           key TEXT PRIMARY KEY,
           value TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS leaderboard_overrides (
+          user_id INTEGER PRIMARY KEY,
+          total_override INTEGER,
+          FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
         """
     )
 
@@ -546,6 +560,17 @@ def seed_if_needed(conn: sqlite3.Connection) -> None:
                 (tournament_id, golfer_id, purse, position),
             )
 
+    conn.commit()
+
+    for user_name, total_override in LEADERBOARD_TOTAL_OVERRIDES.items():
+        user_row = conn.execute("SELECT id FROM users WHERE name = ?", (user_name,)).fetchone()
+        if not user_row:
+            continue
+        conn.execute(
+            "INSERT INTO leaderboard_overrides (user_id, total_override) VALUES (?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET total_override = excluded.total_override",
+            (user_row["id"], total_override),
+        )
     conn.commit()
 
 
@@ -1510,13 +1535,14 @@ def build_leaderboard(conn: sqlite3.Connection):
     return conn.execute(
         """
         SELECT users.name,
-               COALESCE(SUM(results.purse), 0) as total,
+               COALESCE(leaderboard_overrides.total_override, COALESCE(SUM(results.purse), 0)) as total,
                SUM(CASE WHEN results.position = 1 THEN 1 ELSE 0 END) as wins,
                SUM(CASE WHEN results.position IS NOT NULL AND results.position <= 5 THEN 1 ELSE 0 END) as top5,
                SUM(CASE WHEN results.position IS NOT NULL AND results.position <= 10 THEN 1 ELSE 0 END) as top10
         FROM users
         LEFT JOIN picks ON picks.user_id = users.id
         LEFT JOIN results ON results.tournament_id = picks.tournament_id AND results.golfer_id = picks.golfer_id
+        LEFT JOIN leaderboard_overrides ON leaderboard_overrides.user_id = users.id
         GROUP BY users.id
         ORDER BY total DESC, users.name ASC
         """
