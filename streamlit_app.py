@@ -252,6 +252,8 @@ def get_cached_sheet_records(sheet_name: str, ttl_seconds: int = 120):
     worksheet = None
     if sheet_name == "picks":
         worksheet = get_picks_worksheet()
+    elif sheet_name == "golfers":
+        worksheet = get_golfers_worksheet()
     elif sheet_name == "results":
         worksheet = get_results_worksheet()
     elif sheet_name == "users":
@@ -299,6 +301,28 @@ def get_results_worksheet():
         except gspread.WorksheetNotFound:
             worksheet = sheet.add_worksheet(title="results", rows=500, cols=5)
             worksheet.update(values=[["tournament", "golfer", "purse", "position", "updated_at"]], range_name="A1:E1")
+        return worksheet
+    except APIError as exc:
+        SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
+        return None
+
+
+def get_golfers_worksheet():
+    global SHEETS_LAST_ERROR
+    client = get_cached_sheets_client()
+    sheet_id = get_sheets_id()
+    if not client or not sheet_id:
+        return None
+    try:
+        sheet = client.open_by_key(sheet_id)
+        try:
+            worksheet = sheet.worksheet("golfers")
+        except gspread.WorksheetNotFound:
+            worksheet = sheet.add_worksheet(title="golfers", rows=500, cols=5)
+            worksheet.update(
+                values=[["name", "fedex_rank", "fedex_points", "active", "bdl_id"]],
+                range_name="A1:E1",
+            )
         return worksheet
     except APIError as exc:
         SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
@@ -750,6 +774,75 @@ def sync_results_to_sheet(conn: sqlite3.Connection) -> bool:
         SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
         return False
 
+
+def sync_golfers_from_sheet(conn: sqlite3.Connection) -> bool:
+    worksheet = get_golfers_worksheet()
+    if not worksheet:
+        return False
+    rows = get_cached_sheet_records("golfers")
+    if rows is None or not rows:
+        return False
+    pending = []
+    for row in rows:
+        name = (row.get("name") or "").strip()
+        if not name:
+            continue
+        rank = row.get("fedex_rank")
+        points = row.get("fedex_points")
+        active = row.get("active")
+        bdl_id = row.get("bdl_id")
+        pending.append(
+            (
+                name,
+                int(rank) if str(rank).strip().isdigit() else None,
+                int(points) if str(points).strip().isdigit() else None,
+                1 if str(active).strip().lower() in {"1", "true", "yes"} else 0,
+                int(bdl_id) if str(bdl_id).strip().isdigit() else None,
+            )
+        )
+    if not pending:
+        return False
+    conn.execute("DELETE FROM golfers")
+    conn.executemany(
+        "INSERT INTO golfers (name, fedex_rank, fedex_points, active, bdl_id) VALUES (?, ?, ?, ?, ?)",
+        pending,
+    )
+    conn.commit()
+    return True
+
+
+def sync_golfers_to_sheet(conn: sqlite3.Connection) -> bool:
+    worksheet = get_golfers_worksheet()
+    if not worksheet:
+        return False
+    rows = conn.execute(
+        """
+        SELECT name, fedex_rank, fedex_points, active, bdl_id
+        FROM golfers
+        ORDER BY name
+        """
+    ).fetchall()
+    values = [["name", "fedex_rank", "fedex_points", "active", "bdl_id"]]
+    for row in rows:
+        values.append(
+            [
+                row["name"],
+                row["fedex_rank"] or "",
+                row["fedex_points"] or "",
+                1 if row["active"] else 0,
+                row["bdl_id"] or "",
+            ]
+        )
+    try:
+        worksheet.clear()
+        worksheet.update(values=values, range_name="A1")
+        clear_sheet_records_cache("golfers")
+        return True
+    except APIError as exc:
+        global SHEETS_LAST_ERROR
+        SHEETS_LAST_ERROR = f"{type(exc).__name__}: {exc}"
+        return False
+
 def sync_users_from_sheet(conn: sqlite3.Connection) -> bool:
     worksheet = get_users_worksheet()
     if not worksheet:
@@ -861,6 +954,12 @@ def persist_users(conn: sqlite3.Connection) -> None:
         sync_users_to_sheet(conn)
 
 
+def persist_golfers(conn: sqlite3.Connection) -> bool:
+    if get_golfers_worksheet():
+        return sync_golfers_to_sheet(conn)
+    return True
+
+
 def persist_results(conn: sqlite3.Connection) -> bool:
     if get_results_worksheet():
         return sync_results_to_sheet(conn)
@@ -882,6 +981,18 @@ def hydrate_users(conn: sqlite3.Connection) -> None:
         if sync_users_from_sheet(conn):
             return
         sync_users_to_sheet(conn)
+
+
+def hydrate_golfers(conn: sqlite3.Connection) -> None:
+    worksheet = get_golfers_worksheet()
+    if not worksheet:
+        return
+    rows = get_cached_sheet_records("golfers")
+    if rows:
+        sync_golfers_from_sheet(conn)
+        return
+    if conn.execute("SELECT COUNT(*) FROM golfers").fetchone()[0] > 0:
+        persist_golfers(conn)
 
 
 def hydrate_results(conn: sqlite3.Connection) -> None:
@@ -1557,6 +1668,7 @@ def main():
     init_db(conn)
     seed_if_needed(conn)
     hydrate_users(conn)
+    hydrate_golfers(conn)
     hydrate_picks(conn)
     hydrate_results(conn)
     reconcile_recovery_picks(conn)
@@ -2249,7 +2361,10 @@ def main():
                             (gname.strip(),),
                         )
                         conn.commit()
-                        st.success("Golfer added.")
+                        if persist_golfers(conn):
+                            st.success("Golfer added.")
+                        else:
+                            st.warning("Golfer added locally, but roster backup failed. Avoid rebooting until Sheets is healthy.")
                         st.rerun()
 
                 st.markdown("#### Bulk Import Golfers")
@@ -2271,7 +2386,12 @@ def main():
                         )
                         added_or_reactivated += 1
                     conn.commit()
-                    st.success(f"Imported {added_or_reactivated} golfer lines.")
+                    if persist_golfers(conn):
+                        st.success(f"Imported {added_or_reactivated} golfer lines.")
+                    else:
+                        st.warning(
+                            f"Imported {added_or_reactivated} golfer lines locally, but roster backup failed. Avoid rebooting until Sheets is healthy."
+                        )
                     st.rerun()
 
                 st.markdown("#### Replace Roster (Name Only)")
@@ -2290,7 +2410,12 @@ def main():
                                 (name,),
                             )
                         conn.commit()
-                        st.success(f"Roster replaced with {len(names)} golfers.")
+                        if persist_golfers(conn):
+                            st.success(f"Roster replaced with {len(names)} golfers.")
+                        else:
+                            st.warning(
+                                f"Roster replaced locally with {len(names)} golfers, but roster backup failed. Avoid rebooting until Sheets is healthy."
+                            )
                         st.rerun()
 
                 st.markdown("#### Remove Golfers From Current Field")
@@ -2313,7 +2438,12 @@ def main():
                             [(name,) for name in remove_names],
                         )
                         conn.commit()
-                        st.success(f"Removed {len(remove_names)} golfer(s) from active field.")
+                        if persist_golfers(conn):
+                            st.success(f"Removed {len(remove_names)} golfer(s) from active field.")
+                        else:
+                            st.warning(
+                                f"Removed {len(remove_names)} golfer(s) locally, but roster backup failed. Avoid rebooting until Sheets is healthy."
+                            )
                         st.rerun()
 
     if tab_admin:
@@ -2337,12 +2467,14 @@ def main():
 
                 if st.button("Refresh Data From Sheets", type="primary"):
                     clear_sheet_records_cache("picks")
+                    clear_sheet_records_cache("golfers")
                     clear_sheet_records_cache("results")
                     clear_sheet_records_cache("users")
                     hydrate_users(conn)
+                    hydrate_golfers(conn)
                     hydrate_picks(conn)
                     hydrate_results(conn)
-                    st.success("Reloaded picks/results/users from Google Sheets.")
+                    st.success("Reloaded golfers/picks/results/users from Google Sheets.")
                     st.rerun()
 
                 st.markdown("#### Pick Management")
