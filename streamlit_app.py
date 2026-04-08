@@ -802,9 +802,16 @@ def sync_golfers_from_sheet(conn: sqlite3.Connection) -> bool:
         )
     if not pending:
         return False
-    conn.execute("DELETE FROM golfers")
+    # Never delete golfers here: picks/results reference golfers with ON DELETE CASCADE,
+    # and replacing the roster should only affect active-field state, not history.
+    conn.execute("UPDATE golfers SET active = 0")
     conn.executemany(
-        "INSERT INTO golfers (name, fedex_rank, fedex_points, active, bdl_id) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO golfers (name, fedex_rank, fedex_points, active, bdl_id) VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(name) DO UPDATE SET "
+        "fedex_rank = COALESCE(excluded.fedex_rank, golfers.fedex_rank), "
+        "fedex_points = COALESCE(excluded.fedex_points, golfers.fedex_points), "
+        "active = excluded.active, "
+        "bdl_id = COALESCE(excluded.bdl_id, golfers.bdl_id)",
         pending,
     )
     conn.commit()
