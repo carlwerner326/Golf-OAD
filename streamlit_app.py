@@ -37,6 +37,14 @@ BDL_BASE = "https://api.balldontlie.io/pga/v1"
 
 USERS = ["Carl", "Jacob", "Vossy", "AJ", "Jordan", "Cade"]
 FREE_DOUBLE_PICK_TOURNAMENTS = {"THE PLAYERS Championship"}
+LEADERBOARD_TOTAL_OVERRIDES = {
+    "Jordan": 9_102_223.50,
+    "AJ": 5_504_713.33,
+    "Jacob": 3_639_036.50,
+    "Cade": 3_535_308.00,
+    "Carl": 3_418_358.00,
+    "Vossy": 3_379_000.33,
+}
 
 SEED_GOLFERS = [
     ("Si Woo Kim", 5, 496),
@@ -552,6 +560,17 @@ def seed_if_needed(conn: sqlite3.Connection) -> None:
                 (tournament_id, golfer_id, purse, position),
             )
 
+    conn.commit()
+
+    for user_name, total_override in LEADERBOARD_TOTAL_OVERRIDES.items():
+        user_row = conn.execute("SELECT id FROM users WHERE name = ?", (user_name,)).fetchone()
+        if not user_row:
+            continue
+        conn.execute(
+            "INSERT INTO leaderboard_overrides (user_id, total_override) VALUES (?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET total_override = excluded.total_override",
+            (user_row["id"], total_override),
+        )
     conn.commit()
 
 def resolve_entity_id(conn: sqlite3.Connection, table: str, name: str) -> Optional[int]:
@@ -1515,13 +1534,14 @@ def build_leaderboard(conn: sqlite3.Connection):
     return conn.execute(
         """
         SELECT users.name,
-               COALESCE(SUM(results.purse), 0) as total,
+               COALESCE(leaderboard_overrides.total_override, COALESCE(SUM(results.purse), 0)) as total,
                SUM(CASE WHEN results.position = 1 THEN 1 ELSE 0 END) as wins,
                SUM(CASE WHEN results.position IS NOT NULL AND results.position <= 5 THEN 1 ELSE 0 END) as top5,
                SUM(CASE WHEN results.position IS NOT NULL AND results.position <= 10 THEN 1 ELSE 0 END) as top10
         FROM users
         LEFT JOIN picks ON picks.user_id = users.id
         LEFT JOIN results ON results.tournament_id = picks.tournament_id AND results.golfer_id = picks.golfer_id
+        LEFT JOIN leaderboard_overrides ON leaderboard_overrides.user_id = users.id
         GROUP BY users.id
         ORDER BY total DESC, users.name ASC
         """
